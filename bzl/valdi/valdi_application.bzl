@@ -58,6 +58,7 @@ def valdi_application(
         desktop_window_width = 600,
         desktop_window_height = 800,
         desktop_window_resizable = True,
+        linux_windowed = False,
         resources = [],
         version = None,
         deps = []):
@@ -132,6 +133,9 @@ def valdi_application(
     valdi_linux_application(
         name = "{}_linux".format(name),
         root_component_path = root_component_path,
+        window_width = desktop_window_width,
+        window_height = desktop_window_height,
+        windowed = linux_windowed,
         deps = get_suffixed_deps(deps, "_native"),
     )
 

@@ -7,6 +7,7 @@ valdi_application(
     icons = valdi_application_icons(src = "app_assets/icon.png"),
     ios_bundle_id = "com.snap.valdi.threenative",
     ios_families = ["iphone"],
+    linux_windowed = True,
     root_component_path = "App@three_native/src/ThreeNativeApp",
     title = "Valdi Three Native",
     version = "0.1.0",

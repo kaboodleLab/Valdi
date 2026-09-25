@@ -148,11 +148,39 @@ bazel build //apps/three_native:three_native_android \
 That x86_64 build command has not yet been run on a Linux host.
 
 Linux **desktop** is a separate target. Valdi defines a `_linux` application
-target, but its entry point runs `ValdiStandaloneRuntime::evalScript` and
-`StandaloneViewManager`; it does not create a Linux display window. The
+target. The Linux entry point now mounts the root component and gives its view
+tree the configured desktop layout size, but `StandaloneViewManager` still
+records views without drawing them. The
 SnapDrawing C++ core builds on Linux, but the checked-in Linux bootstrap has
-no X11/Wayland window, event, or GPU presentation backend. Thus the current
+no production X11/Wayland view or GPU presentation backend. Thus the current
 Android `GLSurfaceView` cannot simply be rebuilt as a Linux desktop view.
+
+An opt-in SDL2 host builds a separate Linux window target. It mounts the Valdi
+component in the same process, feeds window resizes into Valdi layout, and
+pumps SDL events alongside Valdi's main queue. The repository's Bazel settings
+select Hermes for this Linux build, which is the JavaScript engine needed for
+the planned JSI WebGPU binding. Install SDL2 development headers and libraries,
+then run it from a Wayland session:
+
+```sh
+bazel build //apps/three_native:three_native_linux_window
+SDL_VIDEODRIVER=wayland bazel-bin/apps/three_native/three_native_linux_window
+```
+
+The window currently shows a diagnostic canvas. The native Valdi view tree and
+Three/Dawn scene are not yet composited into it. The existing `three_native_linux`
+target remains available for headless component execution.
+Set `VALDI_LINUX_TRACE_VIEWS=1` to log the laid out view tree after startup.
+On the Linux demo host, it reported a 600×800 `UIView` carrying the platter's
+78,048-byte `meshBytes` buffer, confirming the component and scene graph ran
+through Valdi's JavaScript and native attribute path.
+
+On rolling-release Linux distributions, the pinned LLVM and Swift host tools
+may require `libxml2.so.2` and `libncurses.so.6`. If the distribution only
+provides newer sonames, supply compatible libraries and pass their directory
+to Bazel with both `--action_env=LD_LIBRARY_PATH=...` and
+`--host_action_env=LD_LIBRARY_PATH=...`. This affects the build tools, not the
+Valdi app itself.
 
 The [Linux Dawn probes](linux_dawn_probe/README.md) now run the same platter
 through Three r186's **actual `WebGPURenderer`**, Dawn/Vulkan and the Intel GPU
@@ -190,7 +218,8 @@ Priority for the reusable runtime:
 
 1. Adapt a current Dawn/WebGPU JSI binding to Valdi's Hermes runtime and JS
    scheduler, and connect it to the verified native Wayland `WGPUSurface`.
-2. Add a Valdi Linux window/input host and run the platter in that runtime.
+2. Replace the Linux window's diagnostic canvas with a Valdi view renderer and
+   Dawn surface, then run the platter in that runtime.
 3. Expand browser API compatibility and validate a representative WorldOS
    shader scene and its materials, textures, and readback paths.
 4. Reuse the WebGPU binding on Android and iOS, with Vulkan and Metal surfaces
