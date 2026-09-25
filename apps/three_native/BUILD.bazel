@@ -1,0 +1,14 @@
+load("//bzl/valdi:valdi_application.bzl", "valdi_application", "valdi_application_icons")
+
+valdi_application(
+    name = "three_native",
+    android_activity_theme_name = "Theme.MyApp.Launch",
+    android_resource_files = glob(["app_assets/android/**"]),
+    icons = valdi_application_icons(src = "app_assets/icon.png"),
+    ios_bundle_id = "com.snap.valdi.threenative",
+    ios_families = ["iphone"],
+    root_component_path = "App@three_native/src/ThreeNativeApp",
+    title = "Valdi Three Native",
+    version = "0.1.0",
+    deps = ["//apps/three_native/src/valdi/three_native"],
+)
