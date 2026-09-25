@@ -1,26 +1,10 @@
-import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as nodes from 'three/webgpu';
 import * as tsl from 'three/tsl';
 
-// This adapts the existing WorldOS painted-grid fixture to a native window.
-// The factory and uniforms come from the user's WorldOS checkout at runtime;
-// no copied shader is maintained in the Valdi probe.
-function section(source, start, end) {
-  const from = source.indexOf(start);
-  const to = source.indexOf(end, from + start.length);
-  if (from < 0 || to < 0) throw new Error(`WorldOS source changed: ${start} / ${end}`);
-  return source.slice(from, to);
-}
-
-function template(source, marker) {
-  const start = source.indexOf(marker);
-  const begin = source.indexOf('`', start);
-  const end = source.indexOf('`;', begin);
-  if (start < 0 || begin < 0 || end < 0) throw new Error(`WorldOS template changed: ${marker}`);
-  return source.slice(begin, end + 1);
-}
+// The native host imports WorldOS's own scene factories. No shader or geometry
+// source is parsed, copied, or evaluated in this renderer.
 
 export async function createWorldScene({ THREE, scene, renderer, model, width, height }) {
   if (!process.env.WORLD_OS_ROOT) {
@@ -28,19 +12,20 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
   }
   const root = resolve(process.env.WORLD_OS_ROOT);
   const engine = join(root, 'kernel/engine');
-  const source01 = readFileSync(join(engine, '01-light-and-state.js'), 'utf8');
-  const source03 = readFileSync(join(engine, '03-ground.js'), 'utf8');
   const fromEngine = name => import(pathToFileURL(join(engine, name)).href);
-  const [{ createGridMaterial }, { createGroupFootprint }, { createGroupGardenReveal }] = await Promise.all([
+  const [{ createGridMaterial }, { createGroupFootprint }, { createGroupGardenReveal },
+    { createGridSurfaceSource }, { createTileGeometryFactory },
+    { createWorldTileDefaults, createWorldToneGLSL, createWorldGridColors,
+      createWorldGlossGLSL }] = await Promise.all([
     fromEngine('grid-material.js'), fromEngine('tile-drag-footprint.js'),
-    fromEngine('group-garden-reveal.js'),
+    fromEngine('group-garden-reveal.js'), fromEngine('grid-surface-source.js'),
+    fromEngine('tile-geometry.js'), fromEngine('world-render-constants.js'),
   ]);
 
-  const tileSource = section(source01, 'W.core.TILE = {', '\n  };');
-  const tile = Function(`return (${tileSource.slice(tileSource.indexOf('{'))}\n})`)();
+  const tile = createWorldTileDefaults();
   const exposure = tile.EXPOSURE;
   const W = { core: {
-    TILE: tile, CELL: 1, PLANE: 600,
+    TILE: tile, ...createWorldGridColors(THREE), CELL: 1, PLANE: 600,
     FADE_START: 4.6, FADE_END: 9.6,
     KEY_DIR: new THREE.Vector3(.66, .62, .42).normalize(),
     NIGHT_K: { value: 0 },
@@ -55,22 +40,10 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
     groupFootprint: createGroupFootprint(THREE),
     groupGardenReveal: createGroupGardenReveal(THREE),
   } };
-  for (const name of ['COL_BG', 'COL_GRID_FILL', 'COL_GRID', 'COL_HOVER', 'COL_PLUS']) {
-    const color = source01.match(new RegExp(`const ${name}\\s*= new THREE.Color\\('([^']+)'\\)`));
-    if (!color) throw new Error(`WorldOS ${name} color is absent`);
-    W.core[name] = new THREE.Color(color[1]);
-  }
-  W.core.TONE_GLSL = Function('W', `return ${template(source01, 'W.core.TONE_GLSL =')}`)(W);
-  W.core.GLOSS_GLSL = Function('W', `return ${template(source01, 'const GLOSS_GLSL =')}`)(W);
+  W.core.TONE_GLSL = createWorldToneGLSL(tile);
+  W.core.GLOSS_GLSL = createWorldGlossGLSL();
 
-  const bag = section(source03, 'const gridUniforms =', '\n  W.grid.uniforms =');
-  const object = bag.slice(bag.indexOf('{')).trim().replace(/;$/, '');
-  const uniforms = Function('THREE', 'W', `return (${object})`)(THREE, W);
-  const transition = section(source03, 'const sceneUniforms =', '  W.grid.sceneTransition =');
-  const sceneRevealGLSL = Function('THREE', 'W', 'gridUniforms',
-    `${transition}\nreturn sceneRevealGLSL`)(THREE, W, uniforms);
-  const fragmentShader = Function('W', 'sceneRevealGLSL',
-    `return W.core.TONE_GLSL + ${template(source03, 'const GRID_FRAG =')}`)(W, sceneRevealGLSL);
+  const { gridUniforms: uniforms, GRID_FRAG: fragmentShader } = createGridSurfaceSource(THREE, W);
 
   // Exactly the production painted-grid node material and shader declarations.
   const material = createGridMaterial({
@@ -108,14 +81,10 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
   uniforms.uSunTintA.value.setRGB(.48, .57, .81);
   uniforms.uSunTintB.value.setRGB(.72, .53, .77);
 
-  // Reuse the exact rounded tile geometry and baked vertex color from engine03.
+  // Reuse the exact rounded tile geometry and baked vertex color shared with engine03.
   // The material here remains a simple physical stand-in for its much larger
   // node lighting/shadow owner.
-  const bake = section(source03, 'function tileBakeShade(', '  W.grid =');
-  const geometrySource = section(source03, 'const CS = 6, FSEG = 1, DRAFT = 3;',
-    '    const mat = new THREE.MeshPhysicalMaterial');
-  const tileGeometry = Function('THREE', 'W',
-    `${bake}\nconst T = W.core.TILE;\n${geometrySource}\nreturn tileGeometry();`)(THREE, W);
+  const tileGeometry = createTileGeometryFactory(THREE, W)();
   const tileMaterial = new THREE.MeshPhysicalMaterial({
     color: W.core.COL_GRID_FILL.clone(), roughness: tile.ROUGH,
     metalness: 0, clearcoat: tile.CLEARCOAT, vertexColors: true,

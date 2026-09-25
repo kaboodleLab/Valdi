@@ -162,7 +162,7 @@ targeted render-target readback. A second host uses the current official Dawn
 C API to present directly to GNOME Wayland. These are separate programs; the
 Three renderer is not yet connected to Valdi or the native Wayland host.
 The direct probe can also load WorldOS's actual painted-grid TSL material and
-source uniforms from a SPAOS checkout, animating its lattice wave and hover
+shared scene factories from a SPAOS checkout, animating its lattice wave and hover
 state beside the authored platter GLB. It uses WorldOS's own rounded tile
 geometry with a simple physical material in place of the full tile shader;
 the assembled WorldOS shell is not running in this host.

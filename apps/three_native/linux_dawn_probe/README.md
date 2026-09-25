@@ -54,13 +54,12 @@ export WORLD_OS_ROOT=/path/to/spaos/desktop/world_os
 npm run world-scene
 ```
 
-This run imports WorldOS's `grid-material.js` and its helpers directly from
-`WORLD_OS_ROOT`. It reads the authored grid uniforms, shader declarations,
-tile geometry, and baked vertex colors from `01-light-and-state.js` and
-`03-ground.js`, using the same source extraction approach as WorldOS's grid
-comparison fixture. It does not maintain a fork of the shader or geometry.
-The source markers are checked and fail clearly when they change; the scene
-was validated against SPAOS `0f494e94`.
+This run imports WorldOS's `grid-material.js`, `grid-surface-source.js`,
+`tile-geometry.js`, and `world-render-constants.js` directly from
+`WORLD_OS_ROOT`. The production engine uses those same factories. The native
+host keeps no parsed or copied shader, tile geometry, or palette. This was
+validated against SPAOS `b93b3560`; the earlier `0f494e94` snapshot does not
+have those modules.
 The diagnostic enables the painted lattice path and twilight values so the
 cell shading and animated wave are visible. Mouse movement updates the real
 hover uniforms; clicking restarts the wave at that cell; dragging orbits the
