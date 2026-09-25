@@ -184,12 +184,15 @@ the native runtime's performance.
 
 ## Runtime boundary
 
-The next integration must install a WebGPU binding in Valdi's Hermes runtime
-and expose a `GPUCanvasContext` backed by a native Dawn surface. React Native
+The Linux Valdi host can now borrow its Hermes JSI runtime on the JS thread;
+`//apps/three_native:three_native_linux_jsi_probe` verifies that native JSI
+globals are visible to Valdi scripts. The next integration must install a
+WebGPU binding there and expose a `GPUCanvasContext` backed by a native Dawn
+surface. React Native
 WebGPU's JSI/Dawn layer is a candidate to adapt; its React Native scheduler and
-surface ownership cannot be used unchanged. Valdi's Linux bootstrap currently
-has no display host. SnapDrawing can remain the native 2D UI layer, while Dawn
-presents Three's 3D scene.
+surface ownership cannot be used unchanged. The Linux SDL host presents Valdi
+custom-view content through GLES3 today. SnapDrawing can remain the native 2D
+UI layer, while Dawn presents Three's 3D scene.
 
 The platter asset is used for local validation. Its distribution license has
 not been resolved.

@@ -27,3 +27,16 @@ cc_binary(
         "//valdi:valdi_linux",
     ],
 )
+
+# Verifies that Valdi and a native JSI binding share the same Hermes runtime
+# and that installation can run synchronously on its owning JavaScript thread.
+cc_binary(
+    name = "three_native_linux_jsi_probe",
+    srcs = ["src/linux/HermesJsiProbe.cpp"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//apps/three_native/src/valdi/three_native:three_native_native",
+        "//valdi:valdi_linux",
+        "@hermes//:hermes_api",
+    ],
+)

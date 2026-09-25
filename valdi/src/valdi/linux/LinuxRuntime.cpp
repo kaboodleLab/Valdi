@@ -20,7 +20,8 @@
 namespace ValdiLinux {
 
 Valdi::Ref<Valdi::ValdiStandaloneRuntime> createLinuxRuntime(bool enableDebuggerService,
-                                                              bool disableHotReloader) {
+                                                              bool disableHotReloader,
+                                                              snap::valdi_core::JavaScriptEngineType engineType) {
     auto mainQueue = Valdi::makeShared<Valdi::StandaloneMainQueue>();
     auto diskCache = Valdi::makeShared<Valdi::InMemoryDiskCache>();
     auto resourceLoader = Valdi::makeShared<Valdi::StandaloneResourceLoader>();
@@ -30,7 +31,7 @@ Valdi::Ref<Valdi::ValdiStandaloneRuntime> createLinuxRuntime(bool enableDebugger
                                                  /* enableViewPreloader */ false,
                                                  /* registerCustomAttributes */ true,
                                                  /* keepAttributesHistory */ false,
-                                                 Valdi::JavaScriptBridge::get(),
+                                                 Valdi::JavaScriptBridge::get(engineType),
                                                  mainQueue,
                                                  diskCache,
                                                  /* runtimeListener */ nullptr,
@@ -43,9 +44,11 @@ LinuxComponentRuntime createLinuxComponentRuntime(const char* rootComponentPath,
                                                   int width,
                                                   int height,
                                                   int argc,
-                                                  const char** argv) {
+                                                  const char** argv,
+                                                  snap::valdi_core::JavaScriptEngineType engineType) {
     auto runtime = createLinuxRuntime(/* enableDebuggerService */ false,
-                                      /* disableHotReloader */ true);
+                                      /* disableHotReloader */ true,
+                                      engineType);
     runtime->getResourceLoader().addModuleSearchDirectory(STRING_LITERAL("."));
 
     std::vector<Valdi::StringBox> jsArguments;

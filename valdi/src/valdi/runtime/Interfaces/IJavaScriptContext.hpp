@@ -29,6 +29,10 @@
 #include <string>
 #include <string_view>
 
+namespace facebook::jsi {
+class Runtime;
+}
+
 namespace Valdi {
 
 class StringCache;
@@ -106,6 +110,10 @@ public:
     void initialize(const IJavaScriptContextConfig& config, JSExceptionTracker& exceptionTracker);
 
     JavaScriptTaskScheduler* getTaskScheduler() const;
+
+    // Borrowed pointer, valid only while executing on this context's JS thread.
+    // Engines without a JSI runtime return nullptr.
+    virtual facebook::jsi::Runtime* getJsiRuntime() { return nullptr; }
 
     virtual JSValueRef getGlobalObject(JSExceptionTracker& exceptionTracker) = 0;
 

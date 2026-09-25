@@ -361,7 +361,9 @@ int main(int argc, const char** argv) {
         return 1;
     }
 
-    auto component = ValdiLinux::createLinuxComponentRuntime(kComponentPath, kInitialWidth, kInitialHeight, argc, argv);
+    auto component = ValdiLinux::createLinuxComponentRuntime(
+        kComponentPath, kInitialWidth, kInitialHeight, argc, argv,
+        snap::valdi_core::JavaScriptEngineType::Hermes);
     auto mainQueue = component.runtime->getMainQueue();
     const int frameLimit = frameLimitFromArguments(argc, argv);
     const bool dragTest = hasArgument(argc, argv, "--drag-test");

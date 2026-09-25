@@ -258,10 +258,20 @@ Priority for the reusable runtime:
 4. Reuse the WebGPU binding on Android and iOS, with Vulkan and Metal surfaces
    and shared lifecycle tests. Measure native call and frame costs on hardware.
 
-The Linux Bazel build of `//valdi:valdi_hermes` already defines `HERMES_API`,
-so its Hermes runtime has a JSI instance. The remaining Valdi seam is to expose
-that instance on the owning JS thread and install a WebGPU binding before Three
-loads. The upstream [React Native WebGPU](https://github.com/wcandillon/react-native-webgpu)
+The Linux Bazel build of `//valdi:valdi_hermes` defines `HERMES_API`. Valdi's
+`IJavaScriptContext::getJsiRuntime()` now exposes the borrowed JSI runtime from
+Hermes; other engines return null. Call it only inside a Valdi JS-thread task.
+The `three_native_linux_jsi_probe` requests Hermes explicitly, installs a
+global through JSI, and verifies Valdi script reads it from the same global:
+
+```sh
+bazel build //apps/three_native:three_native_linux_jsi_probe
+bazel-bin/apps/three_native/three_native_linux_jsi_probe
+```
+
+The Linux GLES window host also requests Hermes explicitly and still renders
+and handles pointer input. This validates the VM boundary, but does not
+install WebGPU yet. The upstream [React Native WebGPU](https://github.com/wcandillon/react-native-webgpu)
 C++ API wrappers (inspected at `e2735d7`) are a candidate, but its manager
 expects a React `CallInvoker` and a platform context. A Linux Valdi adapter
 must supply the scheduler, Dawn surface ownership, and image decoding. The

@@ -27,6 +27,8 @@ public:
     explicit HermesJavaScriptContext(JavaScriptTaskScheduler* taskScheduler, ILogger& logger);
     ~HermesJavaScriptContext() override;
 
+    facebook::jsi::Runtime* getJsiRuntime() override;
+
     JSValueRef getGlobalObject(JSExceptionTracker& exceptionTracker) final;
 
     BytesView preCompile(const std::string_view& script,

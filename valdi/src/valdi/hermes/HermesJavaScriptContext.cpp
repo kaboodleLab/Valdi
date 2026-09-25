@@ -117,6 +117,14 @@ HermesJavaScriptContext::~HermesJavaScriptContext() {
     prepareForTeardown();
 }
 
+facebook::jsi::Runtime* HermesJavaScriptContext::getJsiRuntime() {
+#if defined(HERMES_API)
+    return _jsiRuntime.get();
+#else
+    return nullptr;
+#endif
+}
+
 void HermesJavaScriptContext::onInitialize(JSExceptionTracker& exceptionTracker) {
     hermes::vm::GCScope gcScope(*_runtime);
 
