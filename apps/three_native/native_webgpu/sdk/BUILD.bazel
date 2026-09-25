@@ -1,0 +1,11 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# Populated by ../prepare_sdk.sh from pinned release headers and a libc++ build.
+cc_library(
+    name = "dawn",
+    srcs = ["lib64/libwebgpu_dawn.a"],
+    hdrs = glob(["include/**/*.h"]),
+    includes = ["include"],
+    linkopts = ["-ldl", "-pthread"],
+    visibility = ["//apps/three_native/native_webgpu:__pkg__"],
+)

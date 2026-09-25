@@ -33,12 +33,10 @@ Valdi's existing Android drawing stack creates its own EGL ES2 context in
 so sharing that context would not supply ES3/WebGL 2 to Three.
 
 For the full renderer, [Expo GL's WebGL bridge](https://github.com/expo/expo/blob/main/packages/expo-gl/common/EXWebGLMethods.cpp)
-is a stronger starting point for Android WebGL 2 than hand-writing calls.
-[React Native WebGPU's Dawn binding](https://github.com/wcandillon/react-native-webgpu/tree/main/packages/webgpu/cpp)
-is the corresponding WebGPU candidate, but its JSI host-object layer would
-need adaptation to Valdi's JavaScript context interface. Dawn itself supports
-Metal and Vulkan via its native implementation. Neither library has been
-ported into this example.
+is a possible Android WebGL 2 route. The Linux work now uses
+[React Native WebGPU's Dawn binding](https://github.com/wcandillon/react-native-webgpu/tree/main/packages/webgpu/cpp),
+adapted to Valdi's Hermes JSI runtime. Dawn presents to native Wayland over
+Vulkan. The Android adapter below remains the earlier narrow triangle path.
 
 ```text
 Valdi TS component -> Three r186 scene + GLTFLoader -> typed vertex/matrix arrays
@@ -211,15 +209,14 @@ to Bazel with both `--action_env=LD_LIBRARY_PATH=...` and
 `--host_action_env=LD_LIBRARY_PATH=...`. This affects the build tools, not the
 Valdi app itself.
 
-The [Linux Dawn probes](linux_dawn_probe/README.md) now run the same platter
+The [Linux Dawn probes](linux_dawn_probe/README.md) run the same platter
 through Three r186's **actual `WebGPURenderer`**, Dawn/Vulkan and the Intel GPU
 on the Linux demo host. The direct probe presents to either an Xwayland or a
 native Wayland swapchain, including its glass material, typed-array texture
 upload and a targeted render-target readback. The native Wayland path uses
 rebuilt SDL and Dawn addons and ran 1,000 WorldOS scene frames with forced
 garbage collection. A separate host uses the current official Dawn C API to
-validate native Wayland presentation without Three. The Three renderer is not
-yet connected to Valdi's Hermes runtime.
+validate native Wayland presentation without Three.
 The direct probe can also load WorldOS's actual painted-grid TSL material and
 shared scene factories from a SPAOS checkout, animating its lattice wave and hover
 state beside the authored platter GLB. It uses WorldOS's own rounded tile
@@ -228,16 +225,20 @@ the assembled WorldOS shell is not running in this host. A second `--world-home`
 mode loads six real textured WorldOS app icon GLBs and the Files box into their
 home positions. It renders through Dawn's native Wayland swapchain and captures a GPU frame,
 but the layout is a pinned snapshot and the jar, stack paper, HUD and live shell
-state are still missing.
+state are still missing. The [native WebGPU binding](native_webgpu/README.md)
+now also runs Three r186 **inside Valdi's Hermes runtime** over its own Dawn
+Wayland surface. GPU readback validated a Three box scene, and a 120-frame
+WorldOS home run loaded the real painted grid, rounded tiles, six app GLBs and
+the Files box. It also uses the production jar profile with a temporary Three
+glass material. A full GPU frame was visually inspected. The home positions
+are a snapshot of WorldOS defaults; its live shell controller, HUD and app
+surfaces are not in this host.
 
-For a native Linux desktop version, keep the Valdi/Three scene and GLB loader;
-add a Linux window and input/lifecycle host, a GPU swapchain/surface, and a
-native JS-to-GPU binding for Three's renderer. SnapDrawing can serve as the 2D
-UI layer if a Linux platform host is added. It does not supply Three's WebGL 2
-or WebGPU API. For the full World OS renderer, the preferred shared 3D path to
-evaluate is Dawn/WebGPU over Vulkan on Linux and Android, Metal on iOS; a
-WebGL 2 bridge over EGL/GLES is an alternative. The current triangle adapter
-is a demonstrated first slice, not either complete renderer binding.
+For a native Linux desktop version, the SDL3 window, Dawn Wayland surface and
+Hermes JSI WebGPU binding now form a working Three presentation path.
+SnapDrawing can serve as a 2D UI layer if a Linux platform host is added; it
+does not supply Three's WebGPU API. The next integration is live WorldOS shell
+state, app surfaces, lifecycle and Valdi view composition.
 
 ## Compatibility and next work
 
@@ -249,12 +250,12 @@ multiple meshes/materials, lights, scene render targets and GLSL/TSL shaders.
 
 Priority for the reusable runtime:
 
-1. Adapt a current Dawn/WebGPU JSI binding to Valdi's Hermes runtime and JS
-   scheduler, and connect it to the verified native Wayland `WGPUSurface`.
-2. Connect a Valdi Linux view renderer and Dawn surface to the WebGPU binding,
-   replacing the narrow GLES3 platter adapter for full Three scenes.
-3. Expand browser API compatibility and validate a representative WorldOS
-   shader scene and its materials, textures, and readback paths.
+1. Connect the live WorldOS layout, jar, HUD, app state and input paths to the
+   native Three canvas; the current home is a rendered scene snapshot.
+2. Connect the Dawn surface to Valdi's Linux view tree and lifecycle, then
+   supply a real JS scheduler/CallInvoker for asynchronous GPU events.
+3. Expand browser API compatibility and image/video decoding for production
+   WorldOS materials, textures and app surfaces.
 4. Reuse the WebGPU binding on Android and iOS, with Vulkan and Metal surfaces
    and shared lifecycle tests. Measure native call and frame costs on hardware.
 
@@ -270,13 +271,12 @@ bazel-bin/apps/three_native/three_native_linux_jsi_probe
 ```
 
 The Linux GLES window host also requests Hermes explicitly and still renders
-and handles pointer input. This validates the VM boundary, but does not
-install WebGPU yet. The upstream [React Native WebGPU](https://github.com/wcandillon/react-native-webgpu)
-C++ API wrappers (inspected at `e2735d7`) are a candidate, but its manager
-expects a React `CallInvoker` and a platform context. A Linux Valdi adapter
-must supply the scheduler, Dawn surface ownership, and image decoding. The
-native scene probe validates the Linux surface and a first JPEG/WebP decode
-path independently of that binding.
+and handles pointer input. The native WebGPU host now installs the pinned
+[React Native WebGPU](https://github.com/wcandillon/react-native-webgpu)
+C++ JSI layer into the same Hermes runtime and owns a Dawn Wayland surface.
+Its probe supplies native GLB bytes and predecoded image data to Three and
+handles pointer hover and click for the WorldOS grid. A production Valdi
+`CallInvoker` and platform image/video context remain to be implemented.
 
 World OS's asset licensing is unresolved; this local prototype is not intended
 for distribution.

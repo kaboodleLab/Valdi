@@ -1,0 +1,317 @@
+#pragma once
+
+#include <functional>
+#include <memory>
+#include <mutex>
+#include <optional>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <utility>
+#include <variant>
+#include <vector>
+
+#include "Unions.h"
+
+#include "NativeObject.h"
+
+#include "rnwgpu/async/AsyncTaskHandle.h"
+#include "rnwgpu/async/RuntimeContext.h"
+
+#include "webgpu/webgpu_cpp.h"
+
+#include "GPUBindGroup.h"
+#include "GPUBindGroupDescriptor.h"
+#include "GPUBindGroupLayout.h"
+#include "GPUBindGroupLayoutDescriptor.h"
+#include "GPUBuffer.h"
+#include "GPUBufferDescriptor.h"
+#include "GPUCommandEncoder.h"
+#include "GPUCommandEncoderDescriptor.h"
+#include "GPUComputePipeline.h"
+#include "GPUComputePipelineDescriptor.h"
+#include "GPUDeviceLostInfo.h"
+#include "GPUError.h"
+#include "GPUExternalTexture.h"
+#include "GPUExternalTextureDescriptor.h"
+#include "GPUPipelineLayout.h"
+#include "GPUPipelineLayoutDescriptor.h"
+#include "GPUQuerySet.h"
+#include "GPUQuerySetDescriptor.h"
+#include "GPUQueue.h"
+#include "GPURenderBundleEncoder.h"
+#include "GPURenderBundleEncoderDescriptor.h"
+#include "GPURenderPipeline.h"
+#include "GPURenderPipelineDescriptor.h"
+#include "GPUSampler.h"
+#include "GPUSamplerDescriptor.h"
+#include "GPUShaderModule.h"
+#include "GPUShaderModuleDescriptor.h"
+#include "GPUSharedFenceDescriptor.h"
+#include "GPUSharedTextureMemory.h"
+#include "GPUSharedTextureMemoryDescriptor.h"
+#include "GPUSupportedLimits.h"
+#include "GPUTexture.h"
+#include "GPUTextureDescriptor.h"
+#include "GPUUncapturedErrorEvent.h"
+
+namespace rnwgpu {
+
+namespace jsi = facebook::jsi;
+
+class GPUDevice : public NativeObject<GPUDevice> {
+public:
+  static constexpr const char *CLASS_NAME = "GPUDevice";
+
+  explicit GPUDevice(wgpu::Device instance,
+                     std::shared_ptr<async::RuntimeContext> async,
+                     std::string label)
+      : NativeObject(CLASS_NAME), _instance(instance), _async(async),
+        _label(label) {}
+
+  ~GPUDevice() override {
+    // Unregister from the static registry
+    unregisterDevice(_instance.Get());
+  }
+
+  // Static registry for looking up GPUDevice from wgpu::Device in callbacks
+  static void registerDevice(WGPUDevice handle,
+                             std::weak_ptr<GPUDevice> device) {
+    std::lock_guard<std::mutex> lock(getRegistryMutex());
+    getRegistry()[handle] = device;
+  }
+
+  static void unregisterDevice(WGPUDevice handle) {
+    std::lock_guard<std::mutex> lock(getRegistryMutex());
+    getRegistry().erase(handle);
+  }
+
+  static std::shared_ptr<GPUDevice> lookupDevice(WGPUDevice handle) {
+    std::lock_guard<std::mutex> lock(getRegistryMutex());
+    auto it = getRegistry().find(handle);
+    if (it != getRegistry().end()) {
+      return it->second.lock();
+    }
+    return nullptr;
+  }
+
+private:
+  static std::unordered_map<WGPUDevice, std::weak_ptr<GPUDevice>> &
+  getRegistry() {
+    static std::unordered_map<WGPUDevice, std::weak_ptr<GPUDevice>> registry;
+    return registry;
+  }
+
+  static std::mutex &getRegistryMutex() {
+    static std::mutex mutex;
+    return mutex;
+  }
+
+public:
+  std::string getBrand() { return CLASS_NAME; }
+
+  void destroy();
+  std::shared_ptr<GPUBuffer>
+  createBuffer(std::shared_ptr<GPUBufferDescriptor> descriptor);
+  std::shared_ptr<GPUTexture>
+  createTexture(std::shared_ptr<GPUTextureDescriptor> descriptor);
+  std::shared_ptr<GPUSampler> createSampler(
+      std::optional<std::shared_ptr<GPUSamplerDescriptor>> descriptor);
+  std::shared_ptr<GPUExternalTexture> importExternalTexture(
+      std::shared_ptr<GPUExternalTextureDescriptor> descriptor);
+  std::shared_ptr<GPUSharedTextureMemory> importSharedTextureMemory(
+      std::shared_ptr<GPUSharedTextureMemoryDescriptor> descriptor);
+  std::shared_ptr<GPUSharedFence>
+  importSharedFence(std::shared_ptr<GPUSharedFenceDescriptor> descriptor);
+  std::shared_ptr<GPUBindGroupLayout> createBindGroupLayout(
+      std::shared_ptr<GPUBindGroupLayoutDescriptor> descriptor);
+  std::shared_ptr<GPUPipelineLayout>
+  createPipelineLayout(std::shared_ptr<GPUPipelineLayoutDescriptor> descriptor);
+  std::shared_ptr<GPUBindGroup>
+  createBindGroup(std::shared_ptr<GPUBindGroupDescriptor> descriptor);
+  std::shared_ptr<GPUShaderModule>
+  createShaderModule(std::shared_ptr<GPUShaderModuleDescriptor> descriptor);
+  std::shared_ptr<GPUComputePipeline> createComputePipeline(
+      std::shared_ptr<GPUComputePipelineDescriptor> descriptor);
+  std::shared_ptr<GPURenderPipeline>
+  createRenderPipeline(std::shared_ptr<GPURenderPipelineDescriptor> descriptor);
+  async::AsyncTaskHandle createComputePipelineAsync(
+      jsi::Runtime &runtime,
+      std::shared_ptr<GPUComputePipelineDescriptor> descriptor);
+  async::AsyncTaskHandle createRenderPipelineAsync(
+      jsi::Runtime &runtime,
+      std::shared_ptr<GPURenderPipelineDescriptor> descriptor);
+  std::shared_ptr<GPUCommandEncoder> createCommandEncoder(
+      std::optional<std::shared_ptr<GPUCommandEncoderDescriptor>> descriptor);
+  std::shared_ptr<GPURenderBundleEncoder> createRenderBundleEncoder(
+      std::shared_ptr<GPURenderBundleEncoderDescriptor> descriptor);
+  std::shared_ptr<GPUQuerySet>
+  createQuerySet(std::shared_ptr<GPUQuerySetDescriptor> descriptor);
+  void pushErrorScope(wgpu::ErrorFilter filter);
+  async::AsyncTaskHandle popErrorScope(jsi::Runtime &runtime);
+
+  std::unordered_set<std::string> getFeatures();
+  std::shared_ptr<GPUSupportedLimits> getLimits();
+  std::shared_ptr<GPUQueue> getQueue();
+  jsi::Value getLost(jsi::Runtime &runtime, const jsi::Object &wrapper);
+  void notifyDeviceLost(wgpu::DeviceLostReason reason, std::string message);
+  void notifyUncapturedError(wgpu::ErrorType type, std::string message);
+  void forceLossForTesting();
+
+  // EventTarget methods
+  void addEventListener(std::string type, jsi::Function callback);
+  void removeEventListener(std::string type, jsi::Function callback);
+
+  std::string getLabel() { return _label; }
+  void setLabel(const std::string &label) {
+    _label = label;
+    _instance.SetLabel(_label.c_str());
+  }
+
+  static void definePrototype(jsi::Runtime &runtime, jsi::Object &prototype) {
+    installGetter(runtime, prototype, "__brand", &GPUDevice::getBrand);
+    installMethod(runtime, prototype, "destroy", &GPUDevice::destroy);
+    installMethod(runtime, prototype, "createBuffer", &GPUDevice::createBuffer);
+    installMethod(runtime, prototype, "createTexture",
+                  &GPUDevice::createTexture);
+    installMethod(runtime, prototype, "createSampler",
+                  &GPUDevice::createSampler);
+    installMethod(runtime, prototype, "importExternalTexture",
+                  &GPUDevice::importExternalTexture);
+    installMethod(runtime, prototype, "importSharedTextureMemory",
+                  &GPUDevice::importSharedTextureMemory);
+    installMethod(runtime, prototype, "importSharedFence",
+                  &GPUDevice::importSharedFence);
+    installMethod(runtime, prototype, "createBindGroupLayout",
+                  &GPUDevice::createBindGroupLayout);
+    installMethod(runtime, prototype, "createPipelineLayout",
+                  &GPUDevice::createPipelineLayout);
+    installMethod(runtime, prototype, "createBindGroup",
+                  &GPUDevice::createBindGroup);
+    installMethod(runtime, prototype, "createShaderModule",
+                  &GPUDevice::createShaderModule);
+    installMethod(runtime, prototype, "createComputePipeline",
+                  &GPUDevice::createComputePipeline);
+    installMethod(runtime, prototype, "createRenderPipeline",
+                  &GPUDevice::createRenderPipeline);
+    installMethodWithRuntime(runtime, prototype, "createComputePipelineAsync",
+                             &GPUDevice::createComputePipelineAsync);
+    installMethodWithRuntime(runtime, prototype, "createRenderPipelineAsync",
+                             &GPUDevice::createRenderPipelineAsync);
+    installMethod(runtime, prototype, "createCommandEncoder",
+                  &GPUDevice::createCommandEncoder);
+    installMethod(runtime, prototype, "createRenderBundleEncoder",
+                  &GPUDevice::createRenderBundleEncoder);
+    installMethod(runtime, prototype, "createQuerySet",
+                  &GPUDevice::createQuerySet);
+    installMethod(runtime, prototype, "pushErrorScope",
+                  &GPUDevice::pushErrorScope);
+    installMethodWithRuntime(runtime, prototype, "popErrorScope",
+                             &GPUDevice::popErrorScope);
+    installGetter(runtime, prototype, "features", &GPUDevice::getFeatures);
+    installGetter(runtime, prototype, "limits", &GPUDevice::getLimits);
+    installGetter(runtime, prototype, "queue", &GPUDevice::getQueue);
+    // `lost` is installed manually: the getter needs the wrapper object
+    // itself, because the promise (and its resolve function) are cached as
+    // hidden properties on the JS side so the GC traces them as part of the
+    // device graph. Holding them strongly from C++ would root the promise's
+    // .then reactions forever (issue #445).
+    {
+      auto lostGetter = jsi::Function::createFromHostFunction(
+          runtime, jsi::PropNameID::forUtf8(runtime, "get_lost"), 0,
+          [](jsi::Runtime &rt, const jsi::Value &thisVal,
+             const jsi::Value * /*args*/, size_t /*count*/) -> jsi::Value {
+            auto native = GPUDevice::fromValue(rt, thisVal);
+            return native->getLost(rt, thisVal.getObject(rt));
+          });
+      auto objectCtor = runtime.global().getPropertyAsObject(runtime, "Object");
+      auto defineProperty =
+          objectCtor.getPropertyAsFunction(runtime, "defineProperty");
+      jsi::Object descriptor(runtime);
+      descriptor.setProperty(runtime, "get", lostGetter);
+      descriptor.setProperty(runtime, "enumerable", true);
+      descriptor.setProperty(runtime, "configurable", true);
+      defineProperty.call(runtime, prototype,
+                          jsi::String::createFromUtf8(runtime, "lost"),
+                          descriptor);
+    }
+    installGetterSetter(runtime, prototype, "label", &GPUDevice::getLabel,
+                        &GPUDevice::setLabel);
+    installMethod(runtime, prototype, "forceLossForTesting",
+                  &GPUDevice::forceLossForTesting);
+
+    // EventTarget methods - installed manually since they take jsi::Function
+    auto addEventListenerFunc = jsi::Function::createFromHostFunction(
+        runtime, jsi::PropNameID::forUtf8(runtime, "addEventListener"), 2,
+        [](jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+           size_t count) -> jsi::Value {
+          if (count < 2 || !args[0].isString() || !args[1].isObject() ||
+              !args[1].getObject(rt).isFunction(rt)) {
+            return jsi::Value::undefined();
+          }
+          auto native = GPUDevice::fromValue(rt, thisVal);
+          native->addEventListener(args[0].getString(rt).utf8(rt),
+                                   args[1].getObject(rt).getFunction(rt));
+          return jsi::Value::undefined();
+        });
+    prototype.setProperty(runtime, "addEventListener", addEventListenerFunc);
+
+    auto removeEventListenerFunc = jsi::Function::createFromHostFunction(
+        runtime, jsi::PropNameID::forUtf8(runtime, "removeEventListener"), 2,
+        [](jsi::Runtime &rt, const jsi::Value &thisVal, const jsi::Value *args,
+           size_t count) -> jsi::Value {
+          if (count < 2 || !args[0].isString() || !args[1].isObject() ||
+              !args[1].getObject(rt).isFunction(rt)) {
+            return jsi::Value::undefined();
+          }
+          auto native = GPUDevice::fromValue(rt, thisVal);
+          native->removeEventListener(args[0].getString(rt).utf8(rt),
+                                      args[1].getObject(rt).getFunction(rt));
+          return jsi::Value::undefined();
+        });
+    prototype.setProperty(runtime, "removeEventListener",
+                          removeEventListenerFunc);
+  }
+
+  inline const wgpu::Device get() { return _instance; }
+
+private:
+  friend class GPUAdapter;
+
+  // Runs the uncapturederror listeners on the creation runtime's JS thread.
+  // Invoked from notifyUncapturedError via the main CallInvoker.
+  void deliverUncapturedError(wgpu::ErrorType type, std::string message);
+
+  wgpu::Device _instance;
+  std::shared_ptr<async::RuntimeContext> _async;
+  std::string _label;
+  // Guards the device-lost state below. getLost() runs on a JS thread, but
+  // Dawn's AllowSpontaneous device-lost callback (and device destruction) can
+  // fire notifyDeviceLost() from other threads, so the mutex keeps these
+  // fields safe.
+  std::mutex _lostMutex;
+  std::shared_ptr<GPUDeviceLostInfo> _lostInfo;
+  bool _lostSettled = false;
+  // Pending `lost` promises, held WEAKLY. A strong native reference would be
+  // a GC root: the promise's .then reactions (three.js captures its whole
+  // renderer there) could never be collected, pinning every GPU wrapper of
+  // the scene and its reported external memory forever (issue #445). The
+  // resolve function lives as a hidden property on the promise object itself,
+  // so if the promise is still alive when the device is lost we can settle
+  // it; if it was collected, nobody could have observed the resolution.
+  // Entries are only added for the device's own runtime when a CallInvoker is
+  // available (main JS runtime), matching the best-effort contract for
+  // spontaneous events.
+  struct PendingLostPromise {
+    jsi::Runtime *runtime;
+    jsi::WeakObject promise;
+  };
+  std::vector<PendingLostPromise> _lostPromises;
+
+  // Event listeners storage - keyed by event type
+  // Each entry contains a vector of shared_ptr to functions
+  std::unordered_map<std::string, std::vector<std::shared_ptr<jsi::Function>>>
+      _eventListeners;
+};
+
+} // namespace rnwgpu

@@ -1,0 +1,213 @@
+#include "GPUQueue.h"
+
+#include <limits>
+#include <memory>
+#include <vector>
+
+#include "Convertors.h"
+
+namespace rnwgpu {
+
+struct BufferSource {
+  void *data;
+  size_t size;            // in bytes
+  size_t bytesPerElement; // 1 for ArrayBuffers
+};
+
+void GPUQueue::submit(
+    std::vector<std::shared_ptr<GPUCommandBuffer>> commandBuffers) {
+  std::vector<wgpu::CommandBuffer> bufs(commandBuffers.size());
+  for (size_t i = 0; i < commandBuffers.size(); i++) {
+    bufs[i] = commandBuffers[i]->get();
+  }
+  Convertor conv;
+  uint32_t bufs_size;
+  if (!conv(bufs_size, bufs.size())) {
+    return;
+  }
+  _instance.Submit(bufs_size, bufs.data());
+}
+
+void GPUQueue::writeBuffer(std::shared_ptr<GPUBuffer> buffer,
+                           uint64_t bufferOffset,
+                           std::shared_ptr<ArrayBuffer> data,
+                           std::optional<uint64_t> dataOffsetElements,
+                           std::optional<size_t> sizeElements) {
+  wgpu::Buffer buf = buffer->get();
+  BufferSource src{.data = data->_data,
+                   .size = data->_size,
+                   .bytesPerElement = data->_bytesPerElement};
+
+  // Note that in the JS semantics of WebGPU, writeBuffer works in number of
+  // elements of the typed arrays.
+  if (dataOffsetElements >
+      static_cast<uint64_t>(src.size / src.bytesPerElement)) {
+    throw std::runtime_error("dataOffset is larger than data's size.");
+    return;
+  }
+  uint64_t dataOffset = dataOffsetElements.value_or(0) * src.bytesPerElement;
+  src.data = reinterpret_cast<uint8_t *>(src.data) + dataOffset;
+  src.size -= dataOffset;
+
+  // Size defaults to dataSize - dataOffset. Instead of computing in elements,
+  // we directly use it in bytes, and convert the provided value, if any, in
+  // bytes.
+  uint64_t size64 = static_cast<uint64_t>(src.size);
+  if (sizeElements.has_value()) {
+    if (sizeElements.value() >
+        std::numeric_limits<uint64_t>::max() / src.bytesPerElement) {
+      throw std::runtime_error("size overflows.");
+      return;
+    }
+    size64 = sizeElements.value() * src.bytesPerElement;
+  }
+
+  if (size64 > static_cast<uint64_t>(src.size)) {
+    throw std::runtime_error("size + dataOffset is larger than data's size.");
+    return;
+  }
+
+  if (size64 % 4 != 0) {
+    throw std::runtime_error("size is not a multiple of 4 bytes.");
+
+    return;
+  }
+
+  assert(size64 <= std::numeric_limits<size_t>::max());
+  _instance.WriteBuffer(buf, bufferOffset, src.data,
+                        static_cast<size_t>(size64));
+}
+
+async::AsyncTaskHandle GPUQueue::onSubmittedWorkDone(jsi::Runtime &runtime) {
+  auto queue = _instance;
+  // Post to the CALLING runtime's context so the promise settles on the
+  // thread that requested it (see GPUBuffer::mapAsync).
+  auto context =
+      async::RuntimeContext::getOrCreate(runtime, _async->instance());
+  return context->postTask(
+      [queue](const async::AsyncTaskHandle::ResolveFunction &resolve,
+              const async::AsyncTaskHandle::RejectFunction &reject) {
+        queue.OnSubmittedWorkDone(
+            wgpu::CallbackMode::AllowProcessEvents,
+            [resolve, reject](wgpu::QueueWorkDoneStatus status,
+                              wgpu::StringView message) {
+              if (status == wgpu::QueueWorkDoneStatus::Success) {
+                resolve(nullptr);
+              } else {
+                std::string error =
+                    message.length ? std::string(message.data, message.length)
+                                   : "Queue work did not complete successfully";
+                reject(std::move(error));
+              }
+            });
+      });
+}
+
+void GPUQueue::copyExternalImageToTexture(
+    std::shared_ptr<GPUImageCopyExternalImage> source,
+    std::shared_ptr<GPUImageCopyTextureTagged> destination,
+    std::shared_ptr<GPUExtent3D> size) {
+  wgpu::TexelCopyTextureInfo dst{};
+  wgpu::TexelCopyBufferLayout layout{};
+  wgpu::Extent3D sz{};
+  Convertor conv;
+  uint32_t bytesPerPixel =
+      source->source->getSize() /
+      (source->source->getWidth() * source->source->getHeight());
+  auto dataLayout = std::make_shared<GPUImageDataLayout>(GPUImageDataLayout{
+      std::optional<double>{0.0},
+      std::optional<double>{
+          static_cast<double>(bytesPerPixel * source->source->getWidth())},
+      std::optional<double>{static_cast<double>(source->source->getHeight())}});
+  if (!conv(dst.aspect, destination->aspect) ||
+      !conv(dst.mipLevel, destination->mipLevel) ||
+      !conv(dst.origin, destination->origin) ||
+      !conv(dst.texture, destination->texture) ||
+      !conv(layout, dataLayout) || //
+      !conv(sz, size)) {
+    throw std::runtime_error("Invalid input for GPUQueue::writeTexture()");
+  }
+
+  const auto origin = source->origin.value_or(nullptr);
+  // GPUOrigin2D coordinates are [EnforceRange] unsigned long: negative,
+  // NaN, or out-of-range doubles must be rejected here because casting
+  // them to an unsigned integer is undefined behavior.
+  constexpr double kMaxOrigin =
+      static_cast<double>(std::numeric_limits<uint32_t>::max());
+  if (origin && (!(origin->x >= 0) || !(origin->y >= 0) ||
+                 origin->x > kMaxOrigin || origin->y > kMaxOrigin)) {
+    throw std::runtime_error(
+        "The source origin must be a non-negative integer coordinate.");
+  }
+  const size_t sourceOriginX =
+      origin ? static_cast<size_t>(origin->x) : 0;
+  const size_t sourceOriginY =
+      origin ? static_cast<size_t>(origin->y) : 0;
+  if (sourceOriginX > source->source->getWidth() ||
+      sz.width > source->source->getWidth() - sourceOriginX ||
+      sourceOriginY > source->source->getHeight() ||
+      sz.height > source->source->getHeight() - sourceOriginY ||
+      sz.depthOrArrayLayers > 1) {
+    throw std::runtime_error(
+        "The source copy region is outside the ImageBitmap.");
+  }
+
+  const bool flipY = source->flipY.value_or(false);
+  // premultipliedAlpha defaults to false per the WebGPU spec: an untagged
+  // destination expects straight alpha. Convert only when the ImageBitmap's
+  // representation differs, using the same rounding as the reference client.
+  const bool sourcePremultiplied = source->source->getPremultiplied();
+  const bool destinationPremultiplied =
+      destination->premultipliedAlpha.value_or(false);
+  const bool needsAlphaConversion =
+      bytesPerPixel == 4 && sourcePremultiplied != destinationPremultiplied;
+
+  if (sourceOriginX != 0 || sourceOriginY != 0 || flipY ||
+      needsAlphaConversion) {
+    uint32_t sourceRowSize = bytesPerPixel * source->source->getWidth();
+    uint32_t rowSize = bytesPerPixel * sz.width;
+    uint32_t totalSize = rowSize * sz.height;
+
+    // Stage only the selected subregion so transformations never touch the
+    // ImageBitmap's backing store or pixels outside the requested copy.
+    std::vector<uint8_t> staged(totalSize);
+    const uint8_t *src =
+        static_cast<const uint8_t *>(source->source->getData());
+    for (uint32_t row = 0; row < sz.height; ++row) {
+      const uint32_t sourceRow =
+          sourceOriginY + (flipY ? sz.height - 1 - row : row);
+      const uint32_t sourceOffset =
+          sourceRow * sourceRowSize + sourceOriginX * bytesPerPixel;
+      std::memcpy(staged.data() + row * rowSize, src + sourceOffset, rowSize);
+    }
+    if (needsAlphaConversion) {
+      convertAlpha(staged.data(), totalSize, sourcePremultiplied,
+                   destinationPremultiplied);
+    }
+    layout.bytesPerRow = rowSize;
+    layout.rowsPerImage = sz.height;
+    _instance.WriteTexture(&dst, staged.data(), totalSize, &layout, &sz);
+  } else {
+    _instance.WriteTexture(&dst, source->source->getData(),
+                           source->source->getSize(), &layout, &sz);
+  }
+}
+
+void GPUQueue::writeTexture(std::shared_ptr<GPUImageCopyTexture> destination,
+                            std::shared_ptr<ArrayBuffer> data,
+                            std::shared_ptr<GPUImageDataLayout> dataLayout,
+                            std::shared_ptr<GPUExtent3D> size) {
+  wgpu::TexelCopyTextureInfo dst{};
+  wgpu::TexelCopyBufferLayout layout{};
+  wgpu::Extent3D sz{};
+  Convertor conv;
+  if (!conv(dst, destination) ||   //
+      !conv(layout, dataLayout) || //
+      !conv(sz, size)) {
+    throw std::runtime_error("Invalid input for GPUQueue::writeTexture()");
+  }
+
+  _instance.WriteTexture(&dst, data->_data, data->_size, &layout, &sz);
+}
+
+} // namespace rnwgpu

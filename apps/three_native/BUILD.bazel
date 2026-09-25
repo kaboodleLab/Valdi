@@ -40,3 +40,29 @@ cc_binary(
         "@hermes//:hermes_api",
     ],
 )
+
+cc_binary(
+    name = "three_native_linux_webgpu_probe",
+    srcs = ["src/linux/WebGPUJsiProbe.cpp"],
+    linkopts = ["-ldl", "-pthread"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//apps/three_native/native_webgpu:rnwgpu_api",
+        "//apps/three_native/src/valdi/three_native:three_native_native",
+        "//valdi:valdi_linux",
+        "@hermes//:hermes_api",
+    ],
+)
+
+cc_binary(
+    name = "three_native_linux_webgpu_surface_probe",
+    srcs = ["src/linux/WebGPUSurfaceProbe.cpp"],
+    linkopts = ["-lSDL3", "-ldl", "-pthread"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//apps/three_native/native_webgpu:rnwgpu_api",
+        "//apps/three_native/src/valdi/three_native:three_native_native",
+        "//valdi:valdi_linux",
+        "@hermes//:hermes_api",
+    ],
+)

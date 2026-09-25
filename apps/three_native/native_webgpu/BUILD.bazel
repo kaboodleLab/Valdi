@@ -1,0 +1,25 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# The C++ WebGPU API layer from react-native-webgpu, pinned in vendor/NOTICE.md.
+# The matching Dawn SDK is installed by prepare_sdk.sh and excluded from Git.
+# The library must be built from the pinned Dawn revision with Valdi's libc++ ABI.
+cc_library(
+    name = "rnwgpu_api",
+    srcs = glob(["vendor/**/*.cpp"]),
+    hdrs = glob(["vendor/**/*.h"]),
+    copts = ["-std=c++20", "-include", "cstdint"],
+    includes = [
+        "vendor",
+        "vendor/jsi",
+        "vendor/rnwgpu",
+        "vendor/rnwgpu/api",
+        "vendor/rnwgpu/api/descriptors",
+        "vendor/rnwgpu/async",
+    ],
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//apps/three_native:__pkg__"],
+    deps = [
+        "//apps/three_native/native_webgpu/sdk:dawn",
+        "@hermes//:hermes_api",
+    ],
+)
