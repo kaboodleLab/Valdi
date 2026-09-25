@@ -36,6 +36,7 @@ let yaw = 0;
 let dragging = false;
 let lastX = 0;
 const maxFramesArg = process.argv.find(arg => arg.startsWith('--frames='));
+const recycleSurfaceTextures = process.argv.includes('--recycle-surface-textures');
 // Until this pinned addon releases surface textures safely, end the demo
 // after a bounded session instead of retaining their wrappers indefinitely.
 const maxFrames = maxFramesArg ? Number(maxFramesArg.slice(9)) : 36000;
@@ -92,7 +93,8 @@ try {
     },
     getCurrentTexture() {
       // The 0.2.0 addon wraps an acquired swapchain texture without retaining
-      // it. Keep wrappers alive until exit to avoid its premature finalizer.
+      // its device. With the patched/rebuilt addon, drop our references after
+      // presentation; the unmodified prebuilt addon needs them until exit.
       const texture = surface.getCurrentTexture();
       heldSurfaceTextures.push(texture);
       return texture;
@@ -210,6 +212,12 @@ try {
     else model.rotation.y = frame * 0.012 + yaw;
     renderer.render(scene, camera);
     surface.swap();
+    if (recycleSurfaceTextures) {
+      heldSurfaceTextures.length = 0;
+      // An exposed GC makes the lifetime regression easy to reproduce during
+      // a long stress run without changing the normal presentation path.
+      if (globalThis.gc && frame % 30 === 0) globalThis.gc();
+    }
     frame += 1;
     if (frame >= maxFrames) { console.log(`Presented ${frame} direct frames`); stop(); return; }
     setTimeout(draw, 16);

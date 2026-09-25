@@ -45,6 +45,27 @@ finalizer assertion. This is a validation program, not a long-running
 production runtime. The current Dawn/Valdi binding must own surface textures
 correctly.
 
+The ownership bug is in the package's `dawn.patch`: `getCurrentTexture()`
+creates a `GPUTexture` using `wgpu::Device::Acquire(_wgpuDevice)`, but
+`_wgpuDevice` is borrowed from the live renderer. Dawn's `Acquire` takes over
+an existing reference; it does not add one. The local patch script changes
+that call to `wgpu::Device(_wgpuDevice)`, which adds a reference. It patches
+the build source only; the downloaded `dawn.node` is unchanged. To build and
+stress a corrected binary in a separate disposable checkout:
+
+```sh
+npm ci --no-audit --no-fund
+npm run patch-gpu-lifetime
+(cd node_modules/@kmamal/gpu && npm run build)
+node --expose-gc direct.mjs --world-scene --recycle-surface-textures --frames=36000
+```
+
+The package build fetches its pinned Dawn and depot_tools revisions and needs
+CMake, Ninja, a C++ compiler, SDL/X11 development headers, and ample disk
+space. The locally patched source has been verified against 0.2.0; the rebuilt
+binary and recycling stress run still need verification. Do not use
+`--recycle-surface-textures` with the unmodified prebuilt addon.
+
 ## Run the WorldOS scene slice
 
 With a matching SPAOS source checkout and the dependencies above installed:
