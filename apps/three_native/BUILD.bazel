@@ -1,4 +1,5 @@
 load("//bzl/valdi:valdi_application.bzl", "valdi_application", "valdi_application_icons")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
 
 valdi_application(
     name = "three_native",
@@ -12,4 +13,17 @@ valdi_application(
     title = "Valdi Three Native",
     version = "0.1.0",
     deps = ["//apps/three_native/src/valdi/three_native"],
+)
+
+# The Linux platter adapter consumes the same Valdi custom-view attributes as
+# the Android GLES3 view, in a native SDL2 Wayland/X11 window.
+cc_binary(
+    name = "three_native_linux_gl",
+    srcs = ["src/linux/ThreeNativeLinux.cpp"],
+    linkopts = ["-lSDL2", "-lGLESv2"],
+    target_compatible_with = ["@platforms//os:linux"],
+    deps = [
+        "//apps/three_native/src/valdi/three_native:three_native_native",
+        "//valdi:valdi_linux",
+    ],
 )

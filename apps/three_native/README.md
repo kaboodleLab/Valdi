@@ -175,6 +175,35 @@ On the Linux demo host, it reported a 600×800 `UIView` carrying the platter's
 78,048-byte `meshBytes` buffer, confirming the component and scene graph ran
 through Valdi's JavaScript and native attribute path.
 
+The app-specific `three_native_linux_gl` target now presents that Valdi scene
+in its own native SDL2 window using an OpenGL ES 3 context. It reads the same
+`meshBytes` and `transformBytes` custom-view attributes as the Android GLES3
+adapter, uploads the static mesh once, and updates the model matrices as Valdi
+rerenders. SDL resizes update Valdi layout; mouse drags call the component's
+`onDrag` callback. Install SDL2 and GLES development headers and libraries:
+
+```sh
+bazel build //apps/three_native:three_native_linux_gl
+SDL_VIDEODRIVER=wayland bazel-bin/apps/three_native/three_native_linux_gl
+```
+
+Press Escape or close the window to exit. For a bounded run and a GPU readback
+of the 100th rendered scene frame:
+
+```sh
+THREE_NATIVE_LINUX_CAPTURE=/tmp/valdi-platter.ppm \
+THREE_NATIVE_LINUX_CAPTURE_FRAME=100 \
+SDL_VIDEODRIVER=wayland \
+  bazel-bin/apps/three_native/three_native_linux_gl --frames=120
+```
+
+The Intel Linux Wayland host rendered 120 frames and saved a 600×800 image with
+320 distinct RGB colors. It uploaded the 78,048-byte mesh once and observed 42
+matrix changes. The `--drag-test --frames=80` diagnostic also passed, confirming
+SDL mouse events reached Valdi and changed the model transform. This GLES3
+adapter is a narrow presentation path for the platter; it does not expose
+WebGL or WebGPU to Three's renderer.
+
 On rolling-release Linux distributions, the pinned LLVM and Swift host tools
 may require `libxml2.so.2` and `libncurses.so.6`. If the distribution only
 provides newer sonames, supply compatible libraries and pass their directory
@@ -210,16 +239,16 @@ is a demonstrated first slice, not either complete renderer binding.
 
 The original GLB bytes and Three r186 loader/scene graph need no conversion.
 The visual material is a fixed lit blue shader; the original World OS material
-pipeline is not yet supported. Current adapter supports one static indexed
-mesh with positions and normals. It excludes textures, morph targets, skinning,
+pipeline is not yet supported. Current adapter supports one mesh expanded to
+triangles with positions and normals. It excludes textures, morph targets, skinning,
 multiple meshes/materials, lights, scene render targets and GLSL/TSL shaders.
 
 Priority for the reusable runtime:
 
 1. Adapt a current Dawn/WebGPU JSI binding to Valdi's Hermes runtime and JS
    scheduler, and connect it to the verified native Wayland `WGPUSurface`.
-2. Replace the Linux window's diagnostic canvas with a Valdi view renderer and
-   Dawn surface, then run the platter in that runtime.
+2. Connect a Valdi Linux view renderer and Dawn surface to the WebGPU binding,
+   replacing the narrow GLES3 platter adapter for full Three scenes.
 3. Expand browser API compatibility and validate a representative WorldOS
    shader scene and its materials, textures, and readback paths.
 4. Reuse the WebGPU binding on Android and iOS, with Vulkan and Metal surfaces
