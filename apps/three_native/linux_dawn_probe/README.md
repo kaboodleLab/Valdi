@@ -29,8 +29,9 @@ Dawn/SDL interop expects Xlib handles. A GNOME Wayland session supplies these
 through Xwayland. Press Escape or close the window to stop. Use `--frames=120`
 for a bounded run. Drag with the mouse to rotate the platter, or resize the
 window. The default run ends after 36,000 frames because of the addon texture
-lifetime limitation; `--world-glass` applies the material values in WorldOS's
-platter scene. Without it, the GLB's material is used.
+lifetime limitation. A rebuilt addon with `--recycle-surface-textures` runs
+until the window is closed. `--world-glass` applies the material values in
+WorldOS's platter scene. Without it, the GLB's material is used.
 
 The frame path acquires a swapchain texture, renders the actual Three scene,
 and presents it without mapping frames to CPU memory. `--readback-test` makes
@@ -55,15 +56,14 @@ stress a corrected binary in a separate disposable checkout:
 
 ```sh
 npm ci --no-audit --no-fund
-npm run patch-gpu-lifetime
-(cd node_modules/@kmamal/gpu && npm run build)
+npm run build-patched-gpu
 node --expose-gc direct.mjs --world-scene --recycle-surface-textures --frames=36000
 ```
 
-The package build fetches its pinned Dawn and depot_tools revisions and needs
-CMake, Ninja, a C++ compiler, SDL/X11 development headers, and ample disk
-space. The locally patched source has been verified against 0.2.0; the rebuilt
-binary and recycling stress run still need verification. Do not use
+The build script fetches the package's pinned Dawn and depot_tools revisions,
+then compiles with Dawn's downloaded Clang and Go toolchains. It needs CMake,
+Ninja, Python, SDL/X11 development headers, and ample disk space. Host GCC 16
+does not compile the pinned Tint sources. Do not use
 `--recycle-surface-textures` with the unmodified prebuilt addon.
 
 ## Run the WorldOS scene slice
@@ -80,8 +80,8 @@ That factory assembles `grid-material.js`, `grid-surface-source.js`,
 `tile-geometry.js`, and `world-render-constants.js`; the production engine
 uses those same lower-level factories. The native host keeps no parsed or
 copied shader, tile geometry, or palette. Use the companion SPAOS
-`codex/world-native-scene-contract` checkout at `c1759c9f`; the earlier `0f494e94`
-snapshot does not have this API.
+`codex/world-native-scene-contract` checkout, which includes
+`native-grid-scene.js`; the earlier `0f494e94` snapshot lacks this API.
 The diagnostic enables the painted lattice path and twilight values so the
 cell shading and animated wave are visible. Mouse movement updates the real
 hover uniforms; clicking restarts the wave at that cell; dragging orbits the

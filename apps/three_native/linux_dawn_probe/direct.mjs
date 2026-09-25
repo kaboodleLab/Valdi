@@ -39,8 +39,9 @@ const maxFramesArg = process.argv.find(arg => arg.startsWith('--frames='));
 const recycleSurfaceTextures = process.argv.includes('--recycle-surface-textures');
 // Until this pinned addon releases surface textures safely, end the demo
 // after a bounded session instead of retaining their wrappers indefinitely.
-const maxFrames = maxFramesArg ? Number(maxFramesArg.slice(9)) : 36000;
-if (!Number.isSafeInteger(maxFrames) || maxFrames <= 0) {
+const maxFrames = maxFramesArg ? Number(maxFramesArg.slice(9)) :
+  (recycleSurfaceTextures ? Infinity : 36000);
+if (maxFramesArg && (!Number.isSafeInteger(maxFrames) || maxFrames <= 0)) {
   throw new Error('--frames must be a positive integer');
 }
 const worldScene = process.argv.includes('--world-scene');
