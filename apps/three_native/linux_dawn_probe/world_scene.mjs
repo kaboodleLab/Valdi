@@ -1,12 +1,14 @@
 import { resolve, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { readFileSync } from 'node:fs';
 import * as nodes from 'three/webgpu';
 import * as tsl from 'three/tsl';
+import { createNativeGLTFLoader } from './native_gltf.mjs';
 
 // The native host imports WorldOS's own scene factories. No shader or geometry
 // source is parsed, copied, or evaluated in this renderer.
 
-export async function createWorldScene({ THREE, scene, renderer, model, width, height }) {
+export async function createWorldScene({ THREE, scene, renderer, model, width, height, homeScene = false }) {
   if (!process.env.WORLD_OS_ROOT) {
     throw new Error('Set WORLD_OS_ROOT to the WorldOS desktop/world_os directory');
   }
@@ -26,10 +28,11 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
   scene.background = core.COL_BG;
 
   const camera = new THREE.OrthographicCamera();
-  camera.position.set(5.3, 7.2, 8.1);
-  camera.lookAt(0, 0, 0);
+  const center = homeScene ? new THREE.Vector3(-1.5, 0, -2.2) : new THREE.Vector3();
+  camera.position.copy(center).add(new THREE.Vector3(5.3, 7.2, 8.1));
+  camera.lookAt(center);
   function resize(pixelWidth, pixelHeight) {
-    const extent = 3.8;
+    const extent = homeScene ? 5.8 : 3.8;
     const aspect = pixelWidth / pixelHeight;
     camera.left = -extent * aspect;
     camera.right = extent * aspect;
@@ -54,14 +57,56 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
     color: core.COL_GRID_FILL.clone(), roughness: core.TILE.ROUGH,
     metalness: 0, clearcoat: core.TILE.CLEARCOAT, vertexColors: true,
   });
-  for (const [x, z] of [[0, 0], [-2, -1], [2, 1], [1, -2]]) {
+  // Current WorldOS home defaults from engine/19-memory-and-persistence.js
+  // (world_os 631663cb1), plus the jar's engine/08 seat. This validation
+  // scene will read live layout through a shell seam when that host is ported.
+  const homeIcons = [
+    { name: 'weather', x: -4, z: -2 },
+    { name: 'calendar', x: -1, z: -5 },
+    { name: 'mail', x: 0, z: -5 },
+    { name: 'notes', x: -4, z: -1 },
+    { name: 'whatsapp', x: 0, z: -4 },
+    { name: 'browser', x: -2, z: 0 },
+    { name: 'files', x: 1, z: -1, size: .68 },
+  ];
+  const homeTiles = [...homeIcons.map(({ x, z }) => [x, z]), [1, 0]];
+  for (const [x, z] of homeScene ? homeTiles : [[0, 0], [-2, -1], [2, 1], [1, -2]]) {
     const tile = new THREE.Mesh(tileGeometry, tileMaterial);
     tile.position.set(x, 0, z);
     scene.add(tile);
   }
-  model.position.set(0, .43, 0);
-  model.rotation.set(-.65, .35, 0);
-  model.scale.setScalar(2.2);
+  const loadedIcons = [];
+  if (homeScene) {
+    model.visible = false;
+    const assetRoot = resolve(process.env.WORLD_OS_ASSET_ROOT || root);
+    const loader = createNativeGLTFLoader();
+    for (const { name, x, z, size = .55 } of homeIcons) {
+      const path = join(assetRoot, 'assets/media/appicons', `${name}.glb`);
+      const bytes = readFileSync(path);
+      const gltf = await new Promise((done, fail) => loader.parse(
+        bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), '', done, fail));
+      const icon = gltf.scene;
+      let texturedMeshes = 0;
+      icon.traverse(object => {
+        if (object.isMesh && (Array.isArray(object.material) ? object.material : [object.material])
+          .some(material => material?.map?.isDataTexture)) texturedMeshes++;
+      });
+      if (texturedMeshes === 0) throw new Error(`WorldOS ${name} icon has no decoded native textures`);
+      const bounds = new THREE.Box3().setFromObject(icon);
+      const extent = bounds.getSize(new THREE.Vector3());
+      icon.scale.setScalar(size / Math.max(extent.x, extent.y, extent.z));
+      const fitted = new THREE.Box3().setFromObject(icon);
+      const iconCenter = fitted.getCenter(new THREE.Vector3());
+      icon.position.set(x - iconCenter.x, core.TILE.H + .015 - fitted.min.y, z - iconCenter.z);
+      scene.add(icon);
+      loadedIcons.push(icon);
+    }
+    console.log('WorldOS home GLB models loaded:', loadedIcons.length, 'from', assetRoot);
+  } else {
+    model.position.set(0, .43, 0);
+    model.rotation.set(-.65, .35, 0);
+    model.scale.setScalar(2.2);
+  }
 
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
@@ -93,14 +138,24 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
       uniforms.uWave.value.set(waveOriginX, waveOriginZ,
         ((frame - waveStartFrame) * .018 * 1.4) % radius, .46);
       uniforms.uWaveK.value.set(.42, .1, 1.25, 0);
-      model.rotation.z = Math.sin(phase) * .12;
-      camera.position.set(5.3 * Math.cos(orbit) - 8.1 * Math.sin(orbit),
-        7.2, 5.3 * Math.sin(orbit) + 8.1 * Math.cos(orbit));
-      camera.lookAt(0, 0, 0);
+      if (!homeScene) model.rotation.z = Math.sin(phase) * .12;
+      camera.position.copy(center).add(new THREE.Vector3(
+        5.3 * Math.cos(orbit) - 8.1 * Math.sin(orbit),
+        7.2, 5.3 * Math.sin(orbit) + 8.1 * Math.cos(orbit)));
+      camera.lookAt(center);
       uniforms.uCamPos.value.copy(camera.position);
     },
     dispose() {
       grid.geometry.dispose(); tileMaterial.dispose(); worldGrid.dispose();
+      for (const icon of loadedIcons) icon.traverse(object => {
+        if (!object.isMesh) return;
+        object.geometry?.dispose();
+        for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+          material?.map?.dispose();
+          material?.normalMap?.dispose();
+          material?.dispose();
+        }
+      });
     },
   };
 }

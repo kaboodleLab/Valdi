@@ -1,14 +1,15 @@
 # Linux native Three.js / Dawn probes
 
-These programs exercise the WorldOS platter GLB on a Linux desktop with a
-native Vulkan WebGPU implementation. They establish two pieces of the intended
-Valdi Linux runtime, but neither is a Valdi application yet.
+These programs exercise WorldOS 3D assets on a Linux desktop with a native
+Vulkan WebGPU implementation. They establish rendering and presentation pieces
+for the intended Valdi Linux runtime; these Dawn probes are not Valdi apps.
 
 | Program | JavaScript / rendering | Window and presentation |
 | --- | --- | --- |
 | `direct.mjs` | Three r186 `WebGPURenderer` on Dawn | SDL2 X11 window (Xwayland under GNOME Wayland); direct GPU swapchain |
 | `direct.mjs --wayland` | Same Three renderer with rebuilt SDL and Dawn addons | Native SDL2 Wayland window; direct GPU swapchain |
 | `direct.mjs --world-scene` | WorldOS's painted-grid TSL material and authored platter GLB | Same direct GPU swapchain; scene input and uniform animation |
+| `direct.mjs --world-home` | WorldOS grid shader, tile geometry, six home app icons and Files box | Native Wayland or X11 swapchain; static home layout snapshot |
 | `wayland_dawn_smoke.cpp` | Current official Dawn C API; animated clear | SDL3 native Wayland window; direct GPU swapchain |
 | `run.mjs` + `viewer.cpp` | Three r186 `WebGPURenderer` on Dawn | Diagnostic SDL2 Wayland viewer; GPU readback and CPU upload every frame |
 
@@ -123,8 +124,32 @@ tile node lighting, shadow pipeline, and shell layout are not in this host.
 
 This is a genuine WorldOS shader/asset slice running on native WebGPU. It is
 still hosted by Node, using Xwayland by default or native Wayland with the
-rebuilt addons. The DOM HUD, app surfaces, image decoding, services, and Valdi
-binding remain separate integration work.
+rebuilt addons. The DOM HUD, app surfaces, services, and Valdi binding remain
+separate integration work.
+
+## Run the native home scene slice
+
+The `--world-home` mode adds six app icon GLBs from WorldOS's home defaults
+at `world_os` commit `631663cb1`, the Files box GLB, and their occupied tiles.
+It decodes the embedded JPEG and WebP textures with `sharp` and uploads them through
+Three's WebGPU `DataTexture` path. Each icon must have a decoded texture or
+startup fails. Set the asset root to a WorldOS checkout containing
+`assets/media/appicons/`:
+
+```sh
+export WORLD_OS_ROOT=/path/to/spaos/desktop/world_os
+export WORLD_OS_ASSET_ROOT=/path/to/world_os
+node direct.mjs --wayland --world-home --readback-test \
+  --recycle-surface-textures --capture=/tmp/world-home.png --frames=120
+```
+
+On the Intel Linux Wayland host, this presented 120 frames and passed the
+targeted GPU readback with 190 distinct red values. The capture is a separate
+one-time GPU readback for visual validation; normal presentation has no CPU
+frame copy. The home positions are a pinned snapshot, not the live persisted
+layout. The jar, the stack's paper sheets, DOM HUD, app screens and WorldOS
+engine state are not yet in the native process. This mode is a scene slice,
+not the running shell.
 
 ## Build the native Wayland surface host
 

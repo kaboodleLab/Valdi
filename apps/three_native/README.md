@@ -224,7 +224,11 @@ The direct probe can also load WorldOS's actual painted-grid TSL material and
 shared scene factories from a SPAOS checkout, animating its lattice wave and hover
 state beside the authored platter GLB. It uses WorldOS's own rounded tile
 geometry with a simple physical material in place of the full tile shader;
-the assembled WorldOS shell is not running in this host.
+the assembled WorldOS shell is not running in this host. A second `--world-home`
+mode loads six real textured WorldOS app icon GLBs and the Files box into their
+home positions. It renders through Dawn's native Wayland swapchain and captures a GPU frame,
+but the layout is a pinned snapshot and the jar, stack paper, HUD and live shell
+state are still missing.
 
 For a native Linux desktop version, keep the Valdi/Three scene and GLB loader;
 add a Linux window and input/lifecycle host, a GPU swapchain/surface, and a
@@ -253,6 +257,16 @@ Priority for the reusable runtime:
    shader scene and its materials, textures, and readback paths.
 4. Reuse the WebGPU binding on Android and iOS, with Vulkan and Metal surfaces
    and shared lifecycle tests. Measure native call and frame costs on hardware.
+
+The Linux Bazel build of `//valdi:valdi_hermes` already defines `HERMES_API`,
+so its Hermes runtime has a JSI instance. The remaining Valdi seam is to expose
+that instance on the owning JS thread and install a WebGPU binding before Three
+loads. The upstream [React Native WebGPU](https://github.com/wcandillon/react-native-webgpu)
+C++ API wrappers (inspected at `e2735d7`) are a candidate, but its manager
+expects a React `CallInvoker` and a platform context. A Linux Valdi adapter
+must supply the scheduler, Dawn surface ownership, and image decoding. The
+native scene probe validates the Linux surface and a first JPEG/WebP decode
+path independently of that binding.
 
 World OS's asset licensing is unresolved; this local prototype is not intended
 for distribution.

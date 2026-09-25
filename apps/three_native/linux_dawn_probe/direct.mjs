@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import sharp from 'sharp';
 import dawn from '@kmamal/gpu';
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
@@ -52,9 +53,11 @@ const maxFrames = maxFramesArg ? Number(maxFramesArg.slice(9)) :
 if (maxFramesArg && (!Number.isSafeInteger(maxFrames) || maxFrames <= 0)) {
   throw new Error('--frames must be a positive integer');
 }
-const worldScene = process.argv.includes('--world-scene');
+const homeScene = process.argv.includes('--world-home');
+const worldScene = process.argv.includes('--world-scene') || homeScene;
 const worldGlass = process.argv.includes('--world-glass') || worldScene;
 const readbackTest = process.argv.includes('--readback-test');
+const capturePath = process.argv.find(arg => arg.startsWith('--capture='))?.slice('--capture='.length);
 
 function stop(code = 0) {
   if (stopped) return;
@@ -125,16 +128,20 @@ try {
 
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0x101827);
-  const asset = readFileSync(new URL('../src/valdi/three_native/src/ui-platter-base.glb.bin', import.meta.url));
-  const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(
-    asset.buffer.slice(asset.byteOffset, asset.byteOffset + asset.byteLength), '', resolve, reject));
-  const model = gltf.scene;
-  const bounds = new THREE.Box3().setFromObject(model);
-  const extent = bounds.getSize(new THREE.Vector3());
-  model.position.sub(bounds.getCenter(new THREE.Vector3()));
-  model.scale.setScalar(1.5 / Math.max(extent.x, extent.y, extent.z));
-  model.rotation.set(-0.55, 0.5, 0);
-  if (worldGlass) {
+  let model = new THREE.Group();
+  if (!homeScene) {
+    const asset = readFileSync(process.env.THREE_NATIVE_PLATTER_ASSET ||
+      new URL('../src/valdi/three_native/src/ui-platter-base.glb.bin', import.meta.url));
+    const gltf = await new Promise((resolve, reject) => new GLTFLoader().parse(
+      asset.buffer.slice(asset.byteOffset, asset.byteOffset + asset.byteLength), '', resolve, reject));
+    model = gltf.scene;
+    const bounds = new THREE.Box3().setFromObject(model);
+    const extent = bounds.getSize(new THREE.Vector3());
+    model.position.sub(bounds.getCenter(new THREE.Vector3()));
+    model.scale.setScalar(1.5 / Math.max(extent.x, extent.y, extent.z));
+    model.rotation.set(-0.55, 0.5, 0);
+  }
+  if (worldGlass && !homeScene) {
     // Material values from WorldOS engine/15-banner-and-calculator.js. Its
     // glass uses Three's transmission render pass and mipmapped refraction.
     const platterMaterial = new THREE.MeshPhysicalMaterial({
@@ -178,7 +185,7 @@ try {
   if (worldScene) {
     const { createWorldScene } = await import('./world_scene.mjs');
     sceneState = await createWorldScene({
-      THREE, scene, renderer, model, width: canvas.width, height: canvas.height,
+      THREE, scene, renderer, model, width: canvas.width, height: canvas.height, homeScene,
     });
     camera = sceneState.camera;
   } else {
@@ -195,6 +202,26 @@ try {
     if (sceneState) sceneState.resize(canvas.width, canvas.height);
     else { camera.aspect = canvas.width / canvas.height; camera.updateProjectionMatrix(); }
   });
+
+  if (capturePath) {
+    const target = new THREE.RenderTarget(canvas.width, canvas.height, {
+      type: THREE.UnsignedByteType, format: THREE.RGBAFormat,
+    });
+    renderer.setRenderTarget(target);
+    renderer.render(scene, camera);
+    renderer.setRenderTarget(null);
+    const padded = await renderer.readRenderTargetPixelsAsync(target, 0, 0, canvas.width, canvas.height);
+    const rowBytes = canvas.width * 4;
+    const stride = Math.ceil(rowBytes / 256) * 256;
+    const pixels = Buffer.alloc(rowBytes * canvas.height);
+    for (let y = 0; y < canvas.height; y++) {
+      pixels.set(padded.subarray(y * stride, y * stride + rowBytes), y * rowBytes);
+    }
+    await sharp(pixels, { raw: { width: canvas.width, height: canvas.height, channels: 4 } })
+      .png().toFile(capturePath);
+    console.log('Captured native WorldOS frame:', capturePath);
+    target.dispose();
+  }
 
   if (readbackTest) {
     const target = new THREE.RenderTarget(32, 32, {
