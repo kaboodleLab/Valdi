@@ -3,11 +3,11 @@ import dawn from '@kmamal/gpu';
 import * as THREE from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-// SDL owns an X11 window (Xwayland in a GNOME Wayland session). Dawn renders
-// directly into its swapchain, without a per-frame CPU readback or upload.
-// @kmamal/gpu 0.2.0's SDL interop assumes Xlib handles, so select X11 before
-// SDL initializes even when this process inherits a Wayland desktop session.
-process.env.SDL_VIDEODRIVER = 'x11';
+// SDL owns a native window. Dawn renders directly into its swapchain, without
+// a per-frame CPU readback or upload. The patched SDL/Dawn addons exchange a
+// tagged X11 or Wayland window handle; the prebuilt addons still need X11.
+const nativeWayland = process.argv.includes('--wayland');
+process.env.SDL_VIDEODRIVER = nativeWayland ? 'wayland' : 'x11';
 const sdl = (await import('@kmamal/sdl')).default;
 Object.assign(globalThis, dawn);
 globalThis.self = {
@@ -25,6 +25,7 @@ const window = sdl.video.createWindow({
   title: 'WorldOS native Three.js + Dawn/Vulkan',
   width, height, resizable: true, webgpu: true,
 });
+console.log('SDL video driver:', process.env.SDL_VIDEODRIVER);
 let renderer;
 let device;
 let surface;
@@ -36,7 +37,14 @@ let yaw = 0;
 let dragging = false;
 let lastX = 0;
 const maxFramesArg = process.argv.find(arg => arg.startsWith('--frames='));
+const presentModeArg = process.argv.find(arg => arg.startsWith('--present-mode='));
+const presentMode = presentModeArg?.slice('--present-mode='.length) ??
+  (nativeWayland ? 'mailbox' : 'fifo');
+if (!['fifo', 'fifoRelaxed', 'immediate', 'mailbox'].includes(presentMode)) {
+  throw new Error(`Invalid present mode: ${presentMode}`);
+}
 const recycleSurfaceTextures = process.argv.includes('--recycle-surface-textures');
+const traceFrames = process.argv.includes('--trace-frames');
 // Until this pinned addon releases surface textures safely, end the demo
 // after a bounded session instead of retaining their wrappers indefinitely.
 const maxFrames = maxFramesArg ? Number(maxFramesArg.slice(9)) :
@@ -59,7 +67,10 @@ function stop(code = 0) {
   process.exit(code);
 }
 
-window.on('close', () => stop());
+window.on('close', () => {
+  if (!stopped) console.log(`SDL window closed after ${frame} presented frames`);
+  stop();
+});
 window.on('keyDown', event => { if (event.key === 'Escape' || event.scancode === 41) stop(); });
 window.on('mouseButtonDown', event => {
   dragging = true; lastX = event.x;
@@ -82,10 +93,10 @@ try {
   Object.defineProperty(device, 'onuncapturederror', {
     value: null, writable: true, configurable: true,
   });
-  surface = dawn.renderGPUDeviceToWindow({ device, window, presentMode: 'fifo' });
+  surface = dawn.renderGPUDeviceToWindow({ device, window, presentMode });
   const format = surface.getPreferredFormat();
   gpu.getPreferredCanvasFormat = () => format;
-  console.log('Direct GPU swapchain format:', format);
+  console.log('Direct GPU swapchain format:', format, 'present mode:', presentMode);
   const context = {
     configure(config) {
       if (config.device !== device || config.format !== format) {
@@ -213,6 +224,7 @@ try {
     else model.rotation.y = frame * 0.012 + yaw;
     renderer.render(scene, camera);
     surface.swap();
+    if (traceFrames) console.log(`Presented frame ${frame + 1}`);
     if (recycleSurfaceTextures) {
       heldSurfaceTextures.length = 0;
       // An exposed GC makes the lifetime regression easy to reproduce during

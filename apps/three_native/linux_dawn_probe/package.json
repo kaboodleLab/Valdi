@@ -7,7 +7,8 @@
     "direct": "node direct.mjs --world-glass --readback-test",
     "world-scene": "node direct.mjs --world-scene --readback-test",
     "patch-gpu-lifetime": "node patch-kmamal-gpu-lifetime.mjs",
-    "build-patched-gpu": "sh build-patched-gpu.sh"
+    "build-patched-gpu": "sh build-patched-gpu.sh",
+    "build-patched-sdl": "sh build-patched-sdl.sh"
   },
   "dependencies": {
     "@kmamal/gpu": "0.2.0",

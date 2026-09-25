@@ -1,0 +1,25 @@
+--- a/src/dawn/node/Module.cpp
++++ b/src/dawn/node/Module.cpp
+@@ -175,9 +175,8 @@
+     }
+ 
+     Napi::Value resize(const Napi::CallbackInfo& info) {
+-        const Napi::Env& env = info.Env();
+-        _createSurface(env);
+-        return env.Undefined();
++        _configureSurface();
++        return info.Env().Undefined();
+     }
+ 
+ private:
+@@ -200,6 +199,10 @@
+ 
+         _wgpuPreferredFormat = wgpuCapabilities.formats[0];
+ 
++        _configureSurface();
++    }
++
++    void _configureSurface() {
+         WGPUSurfaceConfiguration wgpuConfig = {};
+         wgpuConfig.device = _wgpuDevice;
+         wgpuConfig.format = _wgpuPreferredFormat;

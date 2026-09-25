@@ -7,6 +7,7 @@ Valdi Linux runtime, but neither is a Valdi application yet.
 | Program | JavaScript / rendering | Window and presentation |
 | --- | --- | --- |
 | `direct.mjs` | Three r186 `WebGPURenderer` on Dawn | SDL2 X11 window (Xwayland under GNOME Wayland); direct GPU swapchain |
+| `direct.mjs --wayland` | Same Three renderer with rebuilt SDL and Dawn addons | Native SDL2 Wayland window; direct GPU swapchain |
 | `direct.mjs --world-scene` | WorldOS's painted-grid TSL material and authored platter GLB | Same direct GPU swapchain; scene input and uniform animation |
 | `wayland_dawn_smoke.cpp` | Current official Dawn C API; animated clear | SDL3 native Wayland window; direct GPU swapchain |
 | `run.mjs` + `viewer.cpp` | Three r186 `WebGPURenderer` on Dawn | Diagnostic SDL2 Wayland viewer; GPU readback and CPU upload every frame |
@@ -24,9 +25,10 @@ node direct.mjs --world-glass --readback-test
 ```
 
 The explicit installer calls are needed when npm blocks dependency install
-scripts. The demo selects SDL's X11 driver because this version of the Node
-Dawn/SDL interop expects Xlib handles. A GNOME Wayland session supplies these
-through Xwayland. Press Escape or close the window to stop. Use `--frames=120`
+scripts. The prebuilt addons use SDL's X11 driver because their interop expects
+Xlib handles. A GNOME Wayland session supplies these through Xwayland.
+Rebuilding both addons as described below enables `--wayland`. Press Escape or
+close the window to stop. Use `--frames=120`
 for a bounded run. Drag with the mouse to rotate the platter, or resize the
 window. The default run ends after 36,000 frames because of the addon texture
 lifetime limitation. A rebuilt addon with `--recycle-surface-textures` runs
@@ -40,11 +42,10 @@ data. It exercises the separate readback path used by parts of WorldOS, but
 does not add a readback to every presented frame.
 
 The pinned `@kmamal/gpu` 0.2.0 binding has two lifetime/API limitations in
-this demo: Three's `onuncapturederror` property is shadowed, and acquired
-swapchain texture wrappers are retained until process exit to avoid an addon
-finalizer assertion. This is a validation program, not a long-running
-production runtime. The current Dawn/Valdi binding must own surface textures
-correctly.
+this demo: Three's `onuncapturederror` property is shadowed, and the unmodified
+addon requires acquired swapchain texture wrappers to be retained until exit
+to avoid a finalizer assertion. This is a validation program, not a Valdi
+runtime.
 
 The ownership bug is in the package's `dawn.patch`: `getCurrentTexture()`
 creates a `GPUTexture` using `wgpu::Device::Acquire(_wgpuDevice)`, but
@@ -61,16 +62,42 @@ node --expose-gc direct.mjs --world-scene --recycle-surface-textures --frames=36
 ```
 
 The build script fetches the package's pinned Dawn and depot_tools revisions,
-then compiles with Dawn's downloaded Clang and Go toolchains. It needs CMake,
-Ninja, Python, SDL/X11 development headers, and ample disk space. Host GCC 16
-does not compile the pinned Tint sources. Do not use
-`--recycle-surface-textures` with the unmodified prebuilt addon.
+applies the lifetime, dual X11/Wayland surface, and resize patches, then compiles with
+Dawn's downloaded Clang and Go toolchains. It needs CMake, Ninja, Python,
+SDL2/X11/Wayland development headers, and ample disk space. Host GCC 16 does
+not compile the pinned Tint sources. Do not use `--recycle-surface-textures`
+with the unmodified prebuilt addon.
+
+To present the Three.js scene directly to a Wayland compositor, also rebuild
+the pinned SDL addon. This needs `node-gyp`, `pkg-config`, and system SDL2
+development headers and libraries:
+
+```sh
+npm run build-patched-sdl
+export WORLD_OS_ROOT=/path/to/spaos/desktop/world_os
+node direct.mjs --wayland --world-scene --readback-test --recycle-surface-textures
+```
+
+The rebuilt SDL addon tags the window handle as X11 or Wayland. The rebuilt
+Dawn addon creates the matching surface descriptor. Both addons are required;
+`--wayland` cannot use their prebuilt binaries. The X11 path remains available
+after rebuilding. The resize patch reconfigures the existing Dawn surface
+instead of creating a second surface for the same Wayland window. On the test
+machine, Wayland uses mailbox presentation by default: FIFO stalls after its
+initial buffers, and the driver does not support immediate mode for this
+surface. Use `--present-mode=fifo` or `--present-mode=mailbox` to override the
+default if the target compositor needs it.
 
 On the Linux Intel PTL/Vulkan host, the corrected addon rendered 36,000
 WorldOS scene frames in 11 minutes 37 seconds with forced GC every 30 frames.
 The 32×32 readback passed, the process exited cleanly, and systemd measured
 a 112.9 MiB memory peak. Omitting `--frames` with the corrected addon keeps
 the window running until it is closed.
+
+With both patched addons, the same Intel PTL/Vulkan host also presented 120
+WorldOS scene frames directly to GNOME's `wayland-0` socket. The targeted
+readback passed with 104 distinct red values. This is native Wayland
+presentation through SDL2 and Dawn, with no per-frame CPU image transfer.
 
 ## Run the WorldOS scene slice
 
@@ -95,8 +122,9 @@ camera. The tile material uses a simple physical stand-in: WorldOS's full
 tile node lighting, shadow pipeline, and shell layout are not in this host.
 
 This is a genuine WorldOS shader/asset slice running on native WebGPU. It is
-still hosted by Node and Xwayland. The DOM HUD, app surfaces, image decoding,
-services, and Valdi/Wayland binding remain separate integration work.
+still hosted by Node, using Xwayland by default or native Wayland with the
+rebuilt addons. The DOM HUD, app surfaces, image decoding, services, and Valdi
+binding remain separate integration work.
 
 ## Build the native Wayland surface host
 
@@ -113,8 +141,8 @@ SDL_VIDEODRIVER=wayland ./wayland_dawn_smoke 120
 The GNOME terminal supplies `XDG_RUNTIME_DIR` and `WAYLAND_DISPLAY`. On the
 test machine, the official Dawn `v20260923.214225` release presented 120
 frames directly to `wayland-0`. The source also handles window pixel-size
-changes. Its render pass only clears the swapchain; Three.js is not connected
-to this native Wayland host yet.
+changes. Its render pass only clears the swapchain; use the rebuilt Node addons
+above for the Three.js scene on Wayland.
 
 ## Earlier offscreen diagnostic
 
@@ -132,11 +160,11 @@ the native runtime's performance.
 ## Runtime boundary
 
 The next integration must install a WebGPU binding in Valdi's Hermes runtime
-and expose a `GPUCanvasContext` backed by the same native Dawn surface as the
-Linux window. React Native WebGPU's JSI/Dawn layer is a candidate to adapt;
-its React Native scheduler and surface ownership cannot be used unchanged.
-Valdi's Linux bootstrap currently has no display host. SnapDrawing can
-remain the native 2D UI layer, while Dawn presents Three's 3D scene.
+and expose a `GPUCanvasContext` backed by a native Dawn surface. React Native
+WebGPU's JSI/Dawn layer is a candidate to adapt; its React Native scheduler and
+surface ownership cannot be used unchanged. Valdi's Linux bootstrap currently
+has no display host. SnapDrawing can remain the native 2D UI layer, while Dawn
+presents Three's 3D scene.
 
 The platter asset is used for local validation. Its distribution license has
 not been resolved.

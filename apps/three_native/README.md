@@ -156,11 +156,13 @@ Android `GLSurfaceView` cannot simply be rebuilt as a Linux desktop view.
 
 The [Linux Dawn probes](linux_dawn_probe/README.md) now run the same platter
 through Three r186's **actual `WebGPURenderer`**, Dawn/Vulkan and the Intel GPU
-on `192.168.1.41`. One probe presents the Three scene directly to an Xwayland
-swapchain, including its glass material, typed-array texture upload and a
-targeted render-target readback. A second host uses the current official Dawn
-C API to present directly to GNOME Wayland. These are separate programs; the
-Three renderer is not yet connected to Valdi or the native Wayland host.
+on the Linux demo host. The direct probe presents to either an Xwayland or a
+native Wayland swapchain, including its glass material, typed-array texture
+upload and a targeted render-target readback. The native Wayland path uses
+rebuilt SDL and Dawn addons and ran 1,000 WorldOS scene frames with forced
+garbage collection. A separate host uses the current official Dawn C API to
+validate native Wayland presentation without Three. The Three renderer is not
+yet connected to Valdi's Hermes runtime.
 The direct probe can also load WorldOS's actual painted-grid TSL material and
 shared scene factories from a SPAOS checkout, animating its lattice wave and hover
 state beside the authored platter GLB. It uses WorldOS's own rounded tile

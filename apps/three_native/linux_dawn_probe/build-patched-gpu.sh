@@ -2,6 +2,7 @@
 set -eu
 
 cd "$(dirname "$0")"
+probe_root="$(pwd)"
 for tool in node git cmake ninja python3; do
   command -v "$tool" >/dev/null || { echo "Missing build tool: $tool" >&2; exit 1; }
 done
@@ -13,6 +14,8 @@ node patch-kmamal-gpu-lifetime.mjs
 cd "$package_root"
 node scripts/download-depot-tools.mjs
 node scripts/download-dawn.mjs
+git -C dawn apply "$probe_root/patches/dawn-linux-wayland.patch"
+git -C dawn apply "$probe_root/patches/dawn-surface-resize.patch"
 cp dawn/scripts/standalone-with-node.gclient dawn/.gclient
 (
   cd dawn
@@ -39,7 +42,7 @@ cmake -S "$package_root/dawn" -B "$package_root/build" -GNinja \
   -DDAWN_ENABLE_SPIRV_VALIDATION=ON \
   -DDAWN_ALWAYS_ASSERT=ON \
   -DDAWN_USE_X11=ON \
-  -DDAWN_USE_WAYLAND=OFF
+  -DDAWN_USE_WAYLAND=ON
 
 PATH="$go_bin:$PATH" ninja -C "$package_root/build" -j "${DAWN_BUILD_JOBS:-4}" dawn.node
 mkdir -p "$package_root/dist"
