@@ -1,6 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
-import { createPlatterScene } from '../src/valdi/three_native/src/prepareScene.js';
+import sceneModule from '../src/valdi/three_native/src/prepareScene.js';
+
+const { createPlatterScene } = sceneModule;
 
 const asset = await readFile(new URL('../src/valdi/three_native/src/ui-platter-base.glb.bin', import.meta.url));
 const loadTimes = [];

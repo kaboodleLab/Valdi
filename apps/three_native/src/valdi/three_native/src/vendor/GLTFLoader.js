@@ -1,73 +1,30 @@
-import {
-  AnimationClip,
-  Bone,
-  Box3,
-  BufferAttribute,
-  BufferGeometry,
-  ClampToEdgeWrapping,
-  Color,
-  ColorManagement,
-  DirectionalLight,
-  DoubleSide,
-  FileLoader,
-  FrontSide,
-  Group,
-  ImageBitmapLoader,
-  InstancedMesh,
-  InterleavedBuffer,
-  InterleavedBufferAttribute,
-  Interpolant,
-  InterpolateDiscrete,
-  InterpolateLinear,
-  Line,
-  LineBasicMaterial,
-  LineLoop,
-  LineSegments,
-  LinearFilter,
-  LinearMipmapLinearFilter,
-  LinearMipmapNearestFilter,
-  LinearSRGBColorSpace,
-  Loader,
-  LoaderUtils,
-  Material,
-  MathUtils,
-  Matrix4,
-  Mesh,
-  MeshBasicMaterial,
-  MeshPhysicalMaterial,
-  MeshStandardMaterial,
-  MirroredRepeatWrapping,
-  NearestFilter,
-  NearestMipmapLinearFilter,
-  NearestMipmapNearestFilter,
-  NumberKeyframeTrack,
-  Object3D,
-  OrthographicCamera,
-  PerspectiveCamera,
-  PointLight,
-  Points,
-  PointsMaterial,
-  PropertyBinding,
-  Quaternion,
-  QuaternionKeyframeTrack,
-  RepeatWrapping,
-  Skeleton,
-  SkinnedMesh,
-  Sphere,
-  SpotLight,
-  Texture,
-  TextureLoader,
-  TriangleFanDrawMode,
-  TriangleStripDrawMode,
-  Vector2,
-  Vector3,
-  VectorKeyframeTrack,
-  SRGBColorSpace,
-  InstancedBufferAttribute
-} from "./three.core.js";
-import { toTrianglesDrawMode } from "./BufferGeometryUtils.js";
-import { clone } from "./SkeletonUtils.js";
-class GLTFLoader extends Loader {
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var GLTFLoader_exports = {};
+__export(GLTFLoader_exports, {
+  GLTFLoader: () => GLTFLoader
+});
+module.exports = __toCommonJS(GLTFLoader_exports);
+var import_three_core = require("./three.core");
+var import_BufferGeometryUtils = require("./BufferGeometryUtils");
+var import_SkeletonUtils = require("./SkeletonUtils");
+class GLTFLoader extends import_three_core.Loader {
   /**
    * Constructs a new glTF loader.
    *
@@ -149,10 +106,10 @@ class GLTFLoader extends Loader {
     if (this.resourcePath !== "") {
       resourcePath = this.resourcePath;
     } else if (this.path !== "") {
-      const relativeUrl = LoaderUtils.extractUrlBase(url);
-      resourcePath = LoaderUtils.resolveURL(relativeUrl, this.path);
+      const relativeUrl = import_three_core.LoaderUtils.extractUrlBase(url);
+      resourcePath = import_three_core.LoaderUtils.resolveURL(relativeUrl, this.path);
     } else {
-      resourcePath = LoaderUtils.extractUrlBase(url);
+      resourcePath = import_three_core.LoaderUtils.extractUrlBase(url);
     }
     this.manager.itemStart(url);
     const _onError = function(e) {
@@ -164,7 +121,7 @@ class GLTFLoader extends Loader {
       scope.manager.itemError(url);
       scope.manager.itemEnd(url);
     };
-    const loader = new FileLoader(this.manager);
+    const loader = new import_three_core.FileLoader(this.manager);
     loader.setPath(this.path);
     loader.setResponseType("arraybuffer");
     loader.setRequestHeader(this.requestHeader);
@@ -407,21 +364,21 @@ class GLTFLightsExtension {
     const lightDefs = extensions.lights || [];
     const lightDef = lightDefs[lightIndex];
     let lightNode;
-    const color = new Color(16777215);
-    if (lightDef.color !== void 0) color.setRGB(lightDef.color[0], lightDef.color[1], lightDef.color[2], LinearSRGBColorSpace);
+    const color = new import_three_core.Color(16777215);
+    if (lightDef.color !== void 0) color.setRGB(lightDef.color[0], lightDef.color[1], lightDef.color[2], import_three_core.LinearSRGBColorSpace);
     const range = lightDef.range !== void 0 ? lightDef.range : 0;
     switch (lightDef.type) {
       case "directional":
-        lightNode = new DirectionalLight(color);
+        lightNode = new import_three_core.DirectionalLight(color);
         lightNode.target.position.set(0, 0, -1);
         lightNode.add(lightNode.target);
         break;
       case "point":
-        lightNode = new PointLight(color);
+        lightNode = new import_three_core.PointLight(color);
         lightNode.distance = range;
         break;
       case "spot":
-        lightNode = new SpotLight(color);
+        lightNode = new import_three_core.SpotLight(color);
         lightNode.distance = range;
         lightDef.spot = lightDef.spot || {};
         lightDef.spot.innerConeAngle = lightDef.spot.innerConeAngle !== void 0 ? lightDef.spot.innerConeAngle : 0;
@@ -464,21 +421,21 @@ class GLTFMaterialsUnlitExtension {
     this.name = EXTENSIONS.KHR_MATERIALS_UNLIT;
   }
   getMaterialType() {
-    return MeshBasicMaterial;
+    return import_three_core.MeshBasicMaterial;
   }
   extendParams(materialParams, materialDef, parser) {
     const pending = [];
-    materialParams.color = new Color(1, 1, 1);
+    materialParams.color = new import_three_core.Color(1, 1, 1);
     materialParams.opacity = 1;
     const metallicRoughness = materialDef.pbrMetallicRoughness;
     if (metallicRoughness) {
       if (Array.isArray(metallicRoughness.baseColorFactor)) {
         const array = metallicRoughness.baseColorFactor;
-        materialParams.color.setRGB(array[0], array[1], array[2], LinearSRGBColorSpace);
+        materialParams.color.setRGB(array[0], array[1], array[2], import_three_core.LinearSRGBColorSpace);
         materialParams.opacity = array[3];
       }
       if (metallicRoughness.baseColorTexture !== void 0) {
-        pending.push(parser.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, SRGBColorSpace));
+        pending.push(parser.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, import_three_core.SRGBColorSpace));
       }
     }
     return Promise.all(pending);
@@ -505,7 +462,7 @@ class GLTFMaterialsClearcoatExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -527,7 +484,7 @@ class GLTFMaterialsClearcoatExtension {
       pending.push(this.parser.assignTexture(materialParams, "clearcoatNormalMap", extension.clearcoatNormalTexture));
       if (extension.clearcoatNormalTexture.scale !== void 0) {
         const scale = extension.clearcoatNormalTexture.scale;
-        materialParams.clearcoatNormalScale = new Vector2(scale, scale);
+        materialParams.clearcoatNormalScale = new import_three_core.Vector2(scale, scale);
       }
     }
     return Promise.all(pending);
@@ -540,7 +497,7 @@ class GLTFMaterialsDispersionExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -556,7 +513,7 @@ class GLTFMaterialsIridescenceExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -593,24 +550,24 @@ class GLTFMaterialsSheenExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
     if (extension === null) return Promise.resolve();
     const pending = [];
-    materialParams.sheenColor = new Color(0, 0, 0);
+    materialParams.sheenColor = new import_three_core.Color(0, 0, 0);
     materialParams.sheenRoughness = 0;
     materialParams.sheen = 1;
     if (extension.sheenColorFactor !== void 0) {
       const colorFactor = extension.sheenColorFactor;
-      materialParams.sheenColor.setRGB(colorFactor[0], colorFactor[1], colorFactor[2], LinearSRGBColorSpace);
+      materialParams.sheenColor.setRGB(colorFactor[0], colorFactor[1], colorFactor[2], import_three_core.LinearSRGBColorSpace);
     }
     if (extension.sheenRoughnessFactor !== void 0) {
       materialParams.sheenRoughness = extension.sheenRoughnessFactor;
     }
     if (extension.sheenColorTexture !== void 0) {
-      pending.push(this.parser.assignTexture(materialParams, "sheenColorMap", extension.sheenColorTexture, SRGBColorSpace));
+      pending.push(this.parser.assignTexture(materialParams, "sheenColorMap", extension.sheenColorTexture, import_three_core.SRGBColorSpace));
     }
     if (extension.sheenRoughnessTexture !== void 0) {
       pending.push(this.parser.assignTexture(materialParams, "sheenRoughnessMap", extension.sheenRoughnessTexture));
@@ -625,7 +582,7 @@ class GLTFMaterialsTransmissionExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -647,7 +604,7 @@ class GLTFMaterialsVolumeExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -659,7 +616,7 @@ class GLTFMaterialsVolumeExtension {
     }
     materialParams.attenuationDistance = extension.attenuationDistance || Infinity;
     const colorArray = extension.attenuationColor || [1, 1, 1];
-    materialParams.attenuationColor = new Color().setRGB(colorArray[0], colorArray[1], colorArray[2], LinearSRGBColorSpace);
+    materialParams.attenuationColor = new import_three_core.Color().setRGB(colorArray[0], colorArray[1], colorArray[2], import_three_core.LinearSRGBColorSpace);
     return Promise.all(pending);
   }
 }
@@ -670,7 +627,7 @@ class GLTFMaterialsIorExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -687,7 +644,7 @@ class GLTFMaterialsSpecularExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -698,9 +655,9 @@ class GLTFMaterialsSpecularExtension {
       pending.push(this.parser.assignTexture(materialParams, "specularIntensityMap", extension.specularTexture));
     }
     const colorArray = extension.specularColorFactor || [1, 1, 1];
-    materialParams.specularColor = new Color().setRGB(colorArray[0], colorArray[1], colorArray[2], LinearSRGBColorSpace);
+    materialParams.specularColor = new import_three_core.Color().setRGB(colorArray[0], colorArray[1], colorArray[2], import_three_core.LinearSRGBColorSpace);
     if (extension.specularColorTexture !== void 0) {
-      pending.push(this.parser.assignTexture(materialParams, "specularColorMap", extension.specularColorTexture, SRGBColorSpace));
+      pending.push(this.parser.assignTexture(materialParams, "specularColorMap", extension.specularColorTexture, import_three_core.SRGBColorSpace));
     }
     return Promise.all(pending);
   }
@@ -712,7 +669,7 @@ class GLTFMaterialsBumpExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -732,7 +689,7 @@ class GLTFMaterialsAnisotropyExtension {
   }
   getMaterialType(materialIndex) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
-    return extension !== null ? MeshPhysicalMaterial : null;
+    return extension !== null ? import_three_core.MeshPhysicalMaterial : null;
   }
   extendMaterialParams(materialIndex, materialParams) {
     const extension = getMaterialExtension(this.parser, materialIndex, this.name);
@@ -899,11 +856,11 @@ class GLTFMeshGpuInstancing {
       const count = results[0].count;
       const instancedMeshes = [];
       for (const mesh of meshes) {
-        const m = new Matrix4();
-        const p = new Vector3();
-        const q = new Quaternion();
-        const s = new Vector3(1, 1, 1);
-        const instancedMesh = new InstancedMesh(mesh.geometry, mesh.material, count);
+        const m = new import_three_core.Matrix4();
+        const p = new import_three_core.Vector3();
+        const q = new import_three_core.Quaternion();
+        const s = new import_three_core.Vector3(1, 1, 1);
+        const instancedMesh = new import_three_core.InstancedMesh(mesh.geometry, mesh.material, count);
         for (let i = 0; i < count; i++) {
           if (attributes.TRANSLATION) {
             p.fromBufferAttribute(attributes.TRANSLATION, i);
@@ -920,11 +877,11 @@ class GLTFMeshGpuInstancing {
         for (const attributeName in attributes) {
           if (attributeName === "_COLOR_0") {
             const attr = attributes[attributeName];
-            instancedMesh.instanceColor = new InstancedBufferAttribute(attr.array, attr.itemSize, attr.normalized);
+            instancedMesh.instanceColor = new import_three_core.InstancedBufferAttribute(attr.array, attr.itemSize, attr.normalized);
           } else if (attributeName !== "TRANSLATION" && attributeName !== "ROTATION" && attributeName !== "SCALE") {
             if (instanceGeometry === null) {
               const source = instancedMesh.geometry;
-              instanceGeometry = new BufferGeometry();
+              instanceGeometry = new import_three_core.BufferGeometry();
               instanceGeometry.name = source.name;
               for (const name in source.attributes) instanceGeometry.setAttribute(name, source.attributes[name]);
               for (const name in source.morphAttributes) instanceGeometry.morphAttributes[name] = source.morphAttributes[name];
@@ -939,10 +896,10 @@ class GLTFMeshGpuInstancing {
               instancedMesh.geometry = instanceGeometry;
             }
             const attr = attributes[attributeName];
-            instanceGeometry.setAttribute(attributeName, new InstancedBufferAttribute(attr.array, attr.itemSize, attr.normalized));
+            instanceGeometry.setAttribute(attributeName, new import_three_core.InstancedBufferAttribute(attr.array, attr.itemSize, attr.normalized));
           }
         }
-        Object3D.prototype.copy.call(instancedMesh, mesh);
+        import_three_core.Object3D.prototype.copy.call(instancedMesh, mesh);
         this.parser.assignFinalMaterial(instancedMesh);
         instancedMeshes.push(instancedMesh);
       }
@@ -1037,7 +994,7 @@ class GLTFDracoMeshCompressionExtension {
             if (normalized !== void 0) attribute.normalized = normalized;
           }
           resolve(geometry);
-        }, threeAttributeMap, attributeTypeMap, LinearSRGBColorSpace, reject);
+        }, threeAttributeMap, attributeTypeMap, import_three_core.LinearSRGBColorSpace, reject);
       });
     });
   }
@@ -1088,7 +1045,7 @@ class GLTFMeshQuantizationExtension {
     this.name = EXTENSIONS.KHR_MESH_QUANTIZATION;
   }
 }
-class GLTFCubicSplineInterpolant extends Interpolant {
+class GLTFCubicSplineInterpolant extends import_three_core.Interpolant {
   constructor(parameterPositions, sampleValues, sampleSize, resultBuffer) {
     super(parameterPositions, sampleValues, sampleSize, resultBuffer);
   }
@@ -1125,7 +1082,7 @@ class GLTFCubicSplineInterpolant extends Interpolant {
     return result;
   }
 }
-const _quaternion = new Quaternion();
+const _quaternion = new import_three_core.Quaternion();
 class GLTFCubicSplineQuaternionInterpolant extends GLTFCubicSplineInterpolant {
   interpolate_(i1, t0, t, t1) {
     const result = super.interpolate_(i1, t0, t, t1);
@@ -1163,17 +1120,17 @@ const WEBGL_COMPONENT_TYPES = {
   5126: Float32Array
 };
 const WEBGL_FILTERS = {
-  9728: NearestFilter,
-  9729: LinearFilter,
-  9984: NearestMipmapNearestFilter,
-  9985: LinearMipmapNearestFilter,
-  9986: NearestMipmapLinearFilter,
-  9987: LinearMipmapLinearFilter
+  9728: import_three_core.NearestFilter,
+  9729: import_three_core.LinearFilter,
+  9984: import_three_core.NearestMipmapNearestFilter,
+  9985: import_three_core.LinearMipmapNearestFilter,
+  9986: import_three_core.NearestMipmapLinearFilter,
+  9987: import_three_core.LinearMipmapLinearFilter
 };
 const WEBGL_WRAPPINGS = {
-  33071: ClampToEdgeWrapping,
-  33648: MirroredRepeatWrapping,
-  10497: RepeatWrapping
+  33071: import_three_core.ClampToEdgeWrapping,
+  33648: import_three_core.MirroredRepeatWrapping,
+  10497: import_three_core.RepeatWrapping
 };
 const WEBGL_TYPE_SIZES = {
   "SCALAR": 1,
@@ -1206,8 +1163,8 @@ const INTERPOLATION = {
   CUBICSPLINE: void 0,
   // We use a custom interpolant (GLTFCubicSplineInterpolation) for CUBICSPLINE tracks. Each
   // keyframe track will be initialized with a default interpolation type, then modified.
-  LINEAR: InterpolateLinear,
-  STEP: InterpolateDiscrete
+  LINEAR: import_three_core.InterpolateLinear,
+  STEP: import_three_core.InterpolateDiscrete
 };
 const ALPHA_MODES = {
   OPAQUE: "OPAQUE",
@@ -1216,14 +1173,14 @@ const ALPHA_MODES = {
 };
 function createDefaultMaterial(cache) {
   if (cache["DefaultMaterial"] === void 0) {
-    cache["DefaultMaterial"] = new MeshStandardMaterial({
+    cache["DefaultMaterial"] = new import_three_core.MeshStandardMaterial({
       color: 16777215,
       emissive: 0,
       metalness: 1,
       roughness: 1,
       transparent: false,
       depthTest: true,
-      side: FrontSide
+      side: import_three_core.FrontSide
     });
   }
   return cache["DefaultMaterial"];
@@ -1352,7 +1309,7 @@ function getImageURIMimeType(uri) {
   if (uri.search(/\.ktx2($|\?)/i) > 0 || uri.search(/^data\:image\/ktx2/) === 0) return "image/ktx2";
   return "image/png";
 }
-const _identityMatrix = new Matrix4();
+const _identityMatrix = new import_three_core.Matrix4();
 class GLTFParser {
   constructor(json = {}, options = {}) {
     this.json = json;
@@ -1382,13 +1339,13 @@ class GLTFParser {
       firefoxVersion = isFirefox ? userAgent.match(/Firefox\/([0-9]+)\./)[1] : -1;
     }
     if (typeof createImageBitmap === "undefined" || isSafari && safariVersion < 17 || isFirefox && firefoxVersion < 98) {
-      this.textureLoader = new TextureLoader(this.options.manager);
+      this.textureLoader = new import_three_core.TextureLoader(this.options.manager);
     } else {
-      this.textureLoader = new ImageBitmapLoader(this.options.manager);
+      this.textureLoader = new import_three_core.ImageBitmapLoader(this.options.manager);
     }
     this.textureLoader.setCrossOrigin(this.options.crossOrigin);
     this.textureLoader.setRequestHeader(this.options.requestHeader);
-    this.fileLoader = new FileLoader(this.options.manager);
+    this.fileLoader = new import_three_core.FileLoader(this.options.manager);
     this.fileLoader.setResponseType("arraybuffer");
     if (this.options.crossOrigin === "use-credentials") {
       this.fileLoader.setWithCredentials(true);
@@ -1639,7 +1596,7 @@ class GLTFParser {
     }
     const options = this.options;
     return new Promise(function(resolve, reject) {
-      loader.load(LoaderUtils.resolveURL(bufferDef.uri, options.path), resolve, void 0, function() {
+      loader.load(import_three_core.LoaderUtils.resolveURL(bufferDef.uri, options.path), resolve, void 0, function() {
         reject(new Error('THREE.GLTFLoader: Failed to load buffer "' + bufferDef.uri + '".'));
       });
     });
@@ -1675,7 +1632,7 @@ class GLTFParser {
       const TypedArray = WEBGL_COMPONENT_TYPES[accessorDef.componentType];
       const normalized = accessorDef.normalized === true;
       const array = new TypedArray(accessorDef.count * itemSize);
-      return Promise.resolve(new BufferAttribute(array, itemSize, normalized));
+      return Promise.resolve(new import_three_core.BufferAttribute(array, itemSize, normalized));
     }
     const pendingBufferViews = [];
     if (accessorDef.bufferView !== void 0) {
@@ -1703,17 +1660,17 @@ class GLTFParser {
         let ib = parser.cache.get(ibCacheKey);
         if (!ib) {
           array = new TypedArray(bufferView, ibSlice * byteStride, accessorDef.count * byteStride / elementBytes);
-          ib = new InterleavedBuffer(array, byteStride / elementBytes);
+          ib = new import_three_core.InterleavedBuffer(array, byteStride / elementBytes);
           parser.cache.add(ibCacheKey, ib);
         }
-        bufferAttribute = new InterleavedBufferAttribute(ib, itemSize, byteOffset % byteStride / elementBytes, normalized);
+        bufferAttribute = new import_three_core.InterleavedBufferAttribute(ib, itemSize, byteOffset % byteStride / elementBytes, normalized);
       } else {
         if (bufferView === null) {
           array = new TypedArray(accessorDef.count * itemSize);
         } else {
           array = new TypedArray(bufferView, byteOffset, accessorDef.count * itemSize);
         }
-        bufferAttribute = new BufferAttribute(array, itemSize, normalized);
+        bufferAttribute = new import_three_core.BufferAttribute(array, itemSize, normalized);
       }
       if (accessorDef.sparse !== void 0) {
         const itemSizeIndices = WEBGL_TYPE_SIZES.SCALAR;
@@ -1723,7 +1680,7 @@ class GLTFParser {
         const sparseIndices = new TypedArrayIndices(bufferViews[1], byteOffsetIndices, accessorDef.sparse.count * itemSizeIndices);
         const sparseValues = new TypedArray(bufferViews[2], byteOffsetValues, accessorDef.sparse.count * itemSize);
         if (bufferView !== null) {
-          bufferAttribute = new BufferAttribute(bufferAttribute.array.slice(), bufferAttribute.itemSize, bufferAttribute.normalized);
+          bufferAttribute = new import_three_core.BufferAttribute(bufferAttribute.array.slice(), bufferAttribute.itemSize, bufferAttribute.normalized);
         }
         bufferAttribute.normalized = false;
         for (let i = 0, il = sparseIndices.length; i < il; i++) {
@@ -1776,11 +1733,11 @@ class GLTFParser {
       }
       const samplers = json.samplers || {};
       const sampler = samplers[textureDef.sampler] || {};
-      texture.magFilter = WEBGL_FILTERS[sampler.magFilter] || LinearFilter;
-      texture.minFilter = WEBGL_FILTERS[sampler.minFilter] || LinearMipmapLinearFilter;
-      texture.wrapS = WEBGL_WRAPPINGS[sampler.wrapS] || RepeatWrapping;
-      texture.wrapT = WEBGL_WRAPPINGS[sampler.wrapT] || RepeatWrapping;
-      texture.generateMipmaps = !texture.isCompressedTexture && texture.minFilter !== NearestFilter && texture.minFilter !== LinearFilter;
+      texture.magFilter = WEBGL_FILTERS[sampler.magFilter] || import_three_core.LinearFilter;
+      texture.minFilter = WEBGL_FILTERS[sampler.minFilter] || import_three_core.LinearMipmapLinearFilter;
+      texture.wrapS = WEBGL_WRAPPINGS[sampler.wrapS] || import_three_core.RepeatWrapping;
+      texture.wrapT = WEBGL_WRAPPINGS[sampler.wrapT] || import_three_core.RepeatWrapping;
+      texture.generateMipmaps = !texture.isCompressedTexture && texture.minFilter !== import_three_core.NearestFilter && texture.minFilter !== import_three_core.LinearFilter;
       parser.associations.set(texture, { textures: textureIndex });
       return texture;
     }).catch(function() {
@@ -1815,12 +1772,12 @@ class GLTFParser {
         let onLoad = resolve;
         if (loader.isImageBitmapLoader === true) {
           onLoad = function(imageBitmap) {
-            const texture = new Texture(imageBitmap);
+            const texture = new import_three_core.Texture(imageBitmap);
             texture.needsUpdate = true;
             resolve(texture);
           };
         }
-        loader.load(LoaderUtils.resolveURL(sourceURI2, options.path), onLoad, void 0, reject);
+        loader.load(import_three_core.LoaderUtils.resolveURL(sourceURI2, options.path), onLoad, void 0, reject);
       });
     }).then(function(texture) {
       if (isObjectURL === true) {
@@ -1889,8 +1846,8 @@ class GLTFParser {
       const cacheKey = "PointsMaterial:" + material.uuid;
       let pointsMaterial = this.cache.get(cacheKey);
       if (!pointsMaterial) {
-        pointsMaterial = new PointsMaterial();
-        Material.prototype.copy.call(pointsMaterial, material);
+        pointsMaterial = new import_three_core.PointsMaterial();
+        import_three_core.Material.prototype.copy.call(pointsMaterial, material);
         pointsMaterial.color.copy(material.color);
         pointsMaterial.map = material.map;
         pointsMaterial.sizeAttenuation = false;
@@ -1901,8 +1858,8 @@ class GLTFParser {
       const cacheKey = "LineBasicMaterial:" + material.uuid;
       let lineMaterial = this.cache.get(cacheKey);
       if (!lineMaterial) {
-        lineMaterial = new LineBasicMaterial();
-        Material.prototype.copy.call(lineMaterial, material);
+        lineMaterial = new import_three_core.LineBasicMaterial();
+        import_three_core.Material.prototype.copy.call(lineMaterial, material);
         lineMaterial.color.copy(material.color);
         lineMaterial.map = material.map;
         this.cache.add(cacheKey, lineMaterial);
@@ -1931,7 +1888,7 @@ class GLTFParser {
     mesh.material = material;
   }
   getMaterialType() {
-    return MeshStandardMaterial;
+    return import_three_core.MeshStandardMaterial;
   }
   /**
    * Specification: https://github.com/KhronosGroup/glTF/blob/master/specification/2.0/README.md#materials
@@ -1955,15 +1912,15 @@ class GLTFParser {
       pending.push(kmuExtension.extendParams(materialParams, materialDef, parser));
     } else {
       const metallicRoughness = materialDef.pbrMetallicRoughness || {};
-      materialParams.color = new Color(1, 1, 1);
+      materialParams.color = new import_three_core.Color(1, 1, 1);
       materialParams.opacity = 1;
       if (Array.isArray(metallicRoughness.baseColorFactor)) {
         const array = metallicRoughness.baseColorFactor;
-        materialParams.color.setRGB(array[0], array[1], array[2], LinearSRGBColorSpace);
+        materialParams.color.setRGB(array[0], array[1], array[2], import_three_core.LinearSRGBColorSpace);
         materialParams.opacity = array[3];
       }
       if (metallicRoughness.baseColorTexture !== void 0) {
-        pending.push(parser.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, SRGBColorSpace));
+        pending.push(parser.assignTexture(materialParams, "map", metallicRoughness.baseColorTexture, import_three_core.SRGBColorSpace));
       }
       materialParams.metalness = metallicRoughness.metallicFactor !== void 0 ? metallicRoughness.metallicFactor : 1;
       materialParams.roughness = metallicRoughness.roughnessFactor !== void 0 ? metallicRoughness.roughnessFactor : 1;
@@ -1979,7 +1936,7 @@ class GLTFParser {
       })));
     }
     if (materialDef.doubleSided === true) {
-      materialParams.side = DoubleSide;
+      materialParams.side = import_three_core.DoubleSide;
     }
     const alphaMode = materialDef.alphaMode || ALPHA_MODES.OPAQUE;
     if (alphaMode === ALPHA_MODES.BLEND) {
@@ -1991,26 +1948,26 @@ class GLTFParser {
         materialParams.alphaTest = materialDef.alphaCutoff !== void 0 ? materialDef.alphaCutoff : 0.5;
       }
     }
-    if (materialDef.normalTexture !== void 0 && materialType !== MeshBasicMaterial) {
+    if (materialDef.normalTexture !== void 0 && materialType !== import_three_core.MeshBasicMaterial) {
       pending.push(parser.assignTexture(materialParams, "normalMap", materialDef.normalTexture));
-      materialParams.normalScale = new Vector2(1, 1);
+      materialParams.normalScale = new import_three_core.Vector2(1, 1);
       if (materialDef.normalTexture.scale !== void 0) {
         const scale = materialDef.normalTexture.scale;
         materialParams.normalScale.set(scale, scale);
       }
     }
-    if (materialDef.occlusionTexture !== void 0 && materialType !== MeshBasicMaterial) {
+    if (materialDef.occlusionTexture !== void 0 && materialType !== import_three_core.MeshBasicMaterial) {
       pending.push(parser.assignTexture(materialParams, "aoMap", materialDef.occlusionTexture));
       if (materialDef.occlusionTexture.strength !== void 0) {
         materialParams.aoMapIntensity = materialDef.occlusionTexture.strength;
       }
     }
-    if (materialDef.emissiveFactor !== void 0 && materialType !== MeshBasicMaterial) {
+    if (materialDef.emissiveFactor !== void 0 && materialType !== import_three_core.MeshBasicMaterial) {
       const emissiveFactor = materialDef.emissiveFactor;
-      materialParams.emissive = new Color().setRGB(emissiveFactor[0], emissiveFactor[1], emissiveFactor[2], LinearSRGBColorSpace);
+      materialParams.emissive = new import_three_core.Color().setRGB(emissiveFactor[0], emissiveFactor[1], emissiveFactor[2], import_three_core.LinearSRGBColorSpace);
     }
-    if (materialDef.emissiveTexture !== void 0 && materialType !== MeshBasicMaterial) {
-      pending.push(parser.assignTexture(materialParams, "emissiveMap", materialDef.emissiveTexture, SRGBColorSpace));
+    if (materialDef.emissiveTexture !== void 0 && materialType !== import_three_core.MeshBasicMaterial) {
+      pending.push(parser.assignTexture(materialParams, "emissiveMap", materialDef.emissiveTexture, import_three_core.SRGBColorSpace));
     }
     return Promise.all(pending).then(function() {
       const material = new materialType(materialParams);
@@ -2029,7 +1986,7 @@ class GLTFParser {
    * @return {string}
    */
   createUniqueName(originalName) {
-    const sanitizedName = PropertyBinding.sanitizeNodeName(originalName || "");
+    const sanitizedName = import_three_core.PropertyBinding.sanitizeNodeName(originalName || "");
     if (sanitizedName in this.nodeNamesUsed) {
       return sanitizedName + "_" + ++this.nodeNamesUsed[sanitizedName];
     } else {
@@ -2067,12 +2024,12 @@ class GLTFParser {
         if (primitive.extensions && primitive.extensions[EXTENSIONS.KHR_DRACO_MESH_COMPRESSION]) {
           geometryPromise = createDracoPrimitive(primitive);
         } else {
-          geometryPromise = addPrimitiveAttributes(new BufferGeometry(), primitive, parser);
+          geometryPromise = addPrimitiveAttributes(new import_three_core.BufferGeometry(), primitive, parser);
         }
         if (primitive.mode === WEBGL_CONSTANTS.TRIANGLE_STRIP) {
-          geometryPromise = geometryPromise.then((geometry) => toTrianglesDrawMode(geometry, TriangleStripDrawMode));
+          geometryPromise = geometryPromise.then((geometry) => (0, import_BufferGeometryUtils.toTrianglesDrawMode)(geometry, import_three_core.TriangleStripDrawMode));
         } else if (primitive.mode === WEBGL_CONSTANTS.TRIANGLE_FAN) {
-          geometryPromise = geometryPromise.then((geometry) => toTrianglesDrawMode(geometry, TriangleFanDrawMode));
+          geometryPromise = geometryPromise.then((geometry) => (0, import_BufferGeometryUtils.toTrianglesDrawMode)(geometry, import_three_core.TriangleFanDrawMode));
         }
         cache[cacheKey] = { primitive, promise: geometryPromise };
         pending.push(geometryPromise);
@@ -2114,18 +2071,18 @@ class GLTFParser {
           if (needsSkinning && hasSkinningAttributes === false) {
             console.warn("THREE.GLTFLoader: Missing skinIndex or skinWeight attributes. Skinning disabled.");
           }
-          mesh = needsSkinning && hasSkinningAttributes ? new SkinnedMesh(geometry, material) : new Mesh(geometry, material);
+          mesh = needsSkinning && hasSkinningAttributes ? new import_three_core.SkinnedMesh(geometry, material) : new import_three_core.Mesh(geometry, material);
           if (mesh.isSkinnedMesh === true) {
             mesh.normalizeSkinWeights();
           }
         } else if (primitive.mode === WEBGL_CONSTANTS.LINES) {
-          mesh = new LineSegments(geometry, material);
+          mesh = new import_three_core.LineSegments(geometry, material);
         } else if (primitive.mode === WEBGL_CONSTANTS.LINE_STRIP) {
-          mesh = new Line(geometry, material);
+          mesh = new import_three_core.Line(geometry, material);
         } else if (primitive.mode === WEBGL_CONSTANTS.LINE_LOOP) {
-          mesh = new LineLoop(geometry, material);
+          mesh = new import_three_core.LineLoop(geometry, material);
         } else if (primitive.mode === WEBGL_CONSTANTS.POINTS) {
-          mesh = new Points(geometry, material);
+          mesh = new import_three_core.Points(geometry, material);
         } else {
           throw new Error("THREE.GLTFLoader: Primitive mode unsupported: " + primitive.mode);
         }
@@ -2148,7 +2105,7 @@ class GLTFParser {
         if (meshDef.extensions) addUnknownExtensionsToUserData(extensions, meshes[0], meshDef);
         return meshes[0];
       }
-      const group = new Group();
+      const group = new import_three_core.Group();
       if (meshDef.extensions) addUnknownExtensionsToUserData(extensions, group, meshDef);
       parser.associations.set(group, { meshes: meshIndex });
       for (let i = 0, il = meshes.length; i < il; i++) {
@@ -2173,9 +2130,9 @@ class GLTFParser {
       return;
     }
     if (cameraDef.type === "perspective") {
-      camera = new PerspectiveCamera(MathUtils.radToDeg(params.yfov), params.aspectRatio || 1, params.znear || 1, params.zfar || 2e6);
+      camera = new import_three_core.PerspectiveCamera(import_three_core.MathUtils.radToDeg(params.yfov), params.aspectRatio || 1, params.znear || 1, params.zfar || 2e6);
     } else if (cameraDef.type === "orthographic") {
-      camera = new OrthographicCamera(-params.xmag, params.xmag, params.ymag, -params.ymag, params.znear, params.zfar);
+      camera = new import_three_core.OrthographicCamera(-params.xmag, params.xmag, params.ymag, -params.ymag, params.znear, params.zfar);
     }
     if (cameraDef.name) camera.name = this.createUniqueName(cameraDef.name);
     assignExtrasToUserData(camera, cameraDef);
@@ -2208,7 +2165,7 @@ class GLTFParser {
         const jointNode = jointNodes[i];
         if (jointNode) {
           bones.push(jointNode);
-          const mat = new Matrix4();
+          const mat = new import_three_core.Matrix4();
           if (inverseBindMatrices !== null) {
             mat.fromArray(inverseBindMatrices.array, i * 16);
           }
@@ -2217,7 +2174,7 @@ class GLTFParser {
           console.warn('THREE.GLTFLoader: Joint "%s" could not be found.', skinDef.joints[i]);
         }
       }
-      return new Skeleton(bones, boneInverses);
+      return new import_three_core.Skeleton(bones, boneInverses);
     });
   }
   /**
@@ -2281,7 +2238,7 @@ class GLTFParser {
           }
         }
       }
-      const animation = new AnimationClip(animationName, void 0, tracks);
+      const animation = new import_three_core.AnimationClip(animationName, void 0, tracks);
       assignExtrasToUserData(animation, animationDef);
       return animation;
     });
@@ -2342,7 +2299,7 @@ class GLTFParser {
       if (node.userData.pivot !== void 0 && children.length > 0) {
         const pivot = node.userData.pivot;
         const pivotChild = children[0];
-        node.pivot = new Vector3().fromArray(pivot);
+        node.pivot = new import_three_core.Vector3().fromArray(pivot);
         node.position.x -= pivot[0];
         node.position.y -= pivot[1];
         node.position.z -= pivot[2];
@@ -2383,13 +2340,13 @@ class GLTFParser {
     this.nodeCache[nodeIndex] = Promise.all(pending).then(function(objects) {
       let node;
       if (nodeDef.isBone === true) {
-        node = new Bone();
+        node = new import_three_core.Bone();
       } else if (objects.length > 1) {
-        node = new Group();
+        node = new import_three_core.Group();
       } else if (objects.length === 1) {
         node = objects[0];
       } else {
-        node = new Object3D();
+        node = new import_three_core.Object3D();
       }
       if (node !== objects[0]) {
         for (let i = 0, il = objects.length; i < il; i++) {
@@ -2403,7 +2360,7 @@ class GLTFParser {
       assignExtrasToUserData(node, nodeDef);
       if (nodeDef.extensions) addUnknownExtensionsToUserData(extensions, node, nodeDef);
       if (nodeDef.matrix !== void 0) {
-        const matrix = new Matrix4();
+        const matrix = new import_three_core.Matrix4();
         matrix.fromArray(nodeDef.matrix);
         node.applyMatrix4(matrix);
       } else {
@@ -2439,7 +2396,7 @@ class GLTFParser {
     const extensions = this.extensions;
     const sceneDef = this.json.scenes[sceneIndex];
     const parser = this;
-    const scene = new Group();
+    const scene = new import_three_core.Group();
     if (sceneDef.name) scene.name = parser.createUniqueName(sceneDef.name);
     assignExtrasToUserData(scene, sceneDef);
     if (sceneDef.extensions) addUnknownExtensionsToUserData(extensions, scene, sceneDef);
@@ -2452,7 +2409,7 @@ class GLTFParser {
       for (let i = 0, il = nodes.length; i < il; i++) {
         const node = nodes[i];
         if (node.parent !== null) {
-          scene.add(clone(node));
+          scene.add((0, import_SkeletonUtils.clone)(node));
         } else {
           scene.add(node);
         }
@@ -2460,7 +2417,7 @@ class GLTFParser {
       const reduceAssociations = (node) => {
         const reducedAssociations = /* @__PURE__ */ new Map();
         for (const [key, value] of parser.associations) {
-          if (key instanceof Material || key instanceof Texture) {
+          if (key instanceof import_three_core.Material || key instanceof import_three_core.Texture) {
             reducedAssociations.set(key, value);
           }
         }
@@ -2496,29 +2453,29 @@ class GLTFParser {
     let TypedKeyframeTrack;
     switch (PATH_PROPERTIES[target.path]) {
       case PATH_PROPERTIES.weights:
-        TypedKeyframeTrack = NumberKeyframeTrack;
+        TypedKeyframeTrack = import_three_core.NumberKeyframeTrack;
         break;
       case PATH_PROPERTIES.rotation:
-        TypedKeyframeTrack = QuaternionKeyframeTrack;
+        TypedKeyframeTrack = import_three_core.QuaternionKeyframeTrack;
         break;
       case PATH_PROPERTIES.translation:
       case PATH_PROPERTIES.scale:
-        TypedKeyframeTrack = VectorKeyframeTrack;
+        TypedKeyframeTrack = import_three_core.VectorKeyframeTrack;
         break;
       default:
         switch (outputAccessor.itemSize) {
           case 1:
-            TypedKeyframeTrack = NumberKeyframeTrack;
+            TypedKeyframeTrack = import_three_core.NumberKeyframeTrack;
             break;
           case 2:
           case 3:
           default:
-            TypedKeyframeTrack = VectorKeyframeTrack;
+            TypedKeyframeTrack = import_three_core.VectorKeyframeTrack;
             break;
         }
         break;
     }
-    const interpolation = sampler.interpolation !== void 0 ? INTERPOLATION[sampler.interpolation] : InterpolateLinear;
+    const interpolation = sampler.interpolation !== void 0 ? INTERPOLATION[sampler.interpolation] : import_three_core.InterpolateLinear;
     const outputArray = this._getArrayFromAccessor(outputAccessor);
     for (let j = 0, jl = targetNames.length; j < jl; j++) {
       const track = new TypedKeyframeTrack(
@@ -2548,7 +2505,7 @@ class GLTFParser {
   }
   _createCubicSplineTrackInterpolant(track) {
     track.createInterpolant = function InterpolantFactoryMethodGLTFCubicSpline(result) {
-      const interpolantType = this instanceof QuaternionKeyframeTrack ? GLTFCubicSplineQuaternionInterpolant : GLTFCubicSplineInterpolant;
+      const interpolantType = this instanceof import_three_core.QuaternionKeyframeTrack ? GLTFCubicSplineQuaternionInterpolant : GLTFCubicSplineInterpolant;
       return new interpolantType(this.times, this.values, this.getValueSize() / 3, result);
     };
     track.createInterpolant.isInterpolantFactoryMethodGLTFCubicSpline = true;
@@ -2556,15 +2513,15 @@ class GLTFParser {
 }
 function computeBounds(geometry, primitiveDef, parser) {
   const attributes = primitiveDef.attributes;
-  const box = new Box3();
+  const box = new import_three_core.Box3();
   if (attributes.POSITION !== void 0) {
     const accessor = parser.json.accessors[attributes.POSITION];
     const min = accessor.min;
     const max = accessor.max;
     if (min !== void 0 && max !== void 0) {
       box.set(
-        new Vector3(min[0], min[1], min[2]),
-        new Vector3(max[0], max[1], max[2])
+        new import_three_core.Vector3(min[0], min[1], min[2]),
+        new import_three_core.Vector3(max[0], max[1], max[2])
       );
       if (accessor.normalized) {
         const boxScale = getNormalizedComponentScale(WEBGL_COMPONENT_TYPES[accessor.componentType]);
@@ -2580,8 +2537,8 @@ function computeBounds(geometry, primitiveDef, parser) {
   }
   const targets = primitiveDef.targets;
   if (targets !== void 0) {
-    const maxDisplacement = new Vector3();
-    const vector = new Vector3();
+    const maxDisplacement = new import_three_core.Vector3();
+    const vector = new import_three_core.Vector3();
     for (let i = 0, il = targets.length; i < il; i++) {
       const target = targets[i];
       if (target.POSITION !== void 0) {
@@ -2605,7 +2562,7 @@ function computeBounds(geometry, primitiveDef, parser) {
     box.expandByVector(maxDisplacement);
   }
   geometry.boundingBox = box;
-  const sphere = new Sphere();
+  const sphere = new import_three_core.Sphere();
   box.getCenter(sphere.center);
   sphere.radius = box.min.distanceTo(box.max) / 2;
   geometry.boundingSphere = sphere;
@@ -2629,8 +2586,8 @@ function addPrimitiveAttributes(geometry, primitiveDef, parser) {
     });
     pending.push(accessor);
   }
-  if (ColorManagement.workingColorSpace !== LinearSRGBColorSpace && "COLOR_0" in attributes) {
-    console.warn(`THREE.GLTFLoader: Converting vertex colors from "srgb-linear" to "${ColorManagement.workingColorSpace}" not supported.`);
+  if (import_three_core.ColorManagement.workingColorSpace !== import_three_core.LinearSRGBColorSpace && "COLOR_0" in attributes) {
+    console.warn(`THREE.GLTFLoader: Converting vertex colors from "srgb-linear" to "${import_three_core.ColorManagement.workingColorSpace}" not supported.`);
   }
   assignExtrasToUserData(geometry, primitiveDef);
   computeBounds(geometry, primitiveDef, parser);
@@ -2638,6 +2595,3 @@ function addPrimitiveAttributes(geometry, primitiveDef, parser) {
     return primitiveDef.targets !== void 0 ? addMorphTargets(geometry, primitiveDef.targets, parser) : geometry;
   });
 }
-export {
-  GLTFLoader
-};

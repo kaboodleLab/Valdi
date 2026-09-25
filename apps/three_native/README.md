@@ -56,9 +56,11 @@ projection matrices; JNI marshalling copies that array into a Java `byte[]`.
 The GL thread uploads geometry once per context and updates two uniforms per
 frame. Valdi's state render runs at about 30 Hz; this is functional but not a
 display-synchronized production scheduler. No GPU readback is used.
-The vendored Three r186 modules are lowered to ES2018 for Valdi's minifier;
-this module uses Valdi's `js` compilation mode because its Android release
-bytecode precompiler does not accept these modules.
+The vendored Three r186 modules are lowered to ES2018 CommonJS with
+extensionless local imports for Valdi's module loader and minifier. An
+`AbortController` shim covers the API Three's loaders construct when parsing
+an in-memory GLB in Hermes. This module uses Valdi's `js` compilation mode
+because its Android release bytecode precompiler does not accept these modules.
 
 ## Build and run
 
@@ -94,10 +96,13 @@ node --test apps/three_native/test/scene.test.mjs
 node apps/three_native/test/bench.mjs
 ```
 
-### Device validation still required
+### Emulator validation
 
-No Android device or emulator was attached during development. With an arm64
-GLES 3 device connected, use:
+The APK was installed and run on an Android 35 Google APIs arm64 emulator
+(`valdi_three_api35`) on Apple Silicon. The World OS platter appeared and
+changed angle between screenshots. It remained visible after a swipe and
+after returning from Home. The portrait camera fit was adjusted so the broad
+face stays within the display. To repeat with a running arm64 GLES 3 emulator:
 
 ```sh
 adb devices -l
@@ -111,10 +116,52 @@ adb pull /sdcard/Download/three-native.png ./three-native.png
 adb logcat -d -s AndroidRuntime:E
 ```
 
-Watch the platter rotate before and after the swipe, rotate the device to
-exercise resize, and check that it redraws after returning from Home. Record
-frame time and JavaScript-to-Java copy cost on the device; the host benchmark
-does not measure either of those paths.
+The local SDK and AVD are at `~/code/.tools/android-sdk` and
+`~/code/.tools/android-avd`. Launch the installed emulator with:
+
+```sh
+export ANDROID_SDK_ROOT="$HOME/code/.tools/android-sdk"
+export ANDROID_USER_HOME="$HOME/code/.tools/android-user"
+export ANDROID_AVD_HOME="$HOME/code/.tools/android-avd"
+"$ANDROID_SDK_ROOT/emulator/emulator" -avd valdi_three_api35 \
+  -no-window -no-snapshot -no-audio -no-boot-anim -gpu auto
+```
+
+The emulator uses software GPU emulation, so its timing is not representative
+of a phone. Frame time and JavaScript-to-Java copy cost still need on-device
+measurement. Screen rotation has not yet been validated on the emulator.
+
+## Linux path
+
+Linux can build and run the **Android** target. Valdi's Linux setup guide
+documents `valdi dev_setup`, JDK 17 and Bazel; use an Android emulator with
+KVM acceleration or an Android device. This arm64 APK targets an arm64
+emulator/device. A typical x86_64 Linux emulator needs a separately built
+x86_64 Android APK. The repo's platform rules select that ABI with:
+
+```sh
+bazel build //apps/three_native:three_native_android \
+  --define=client_repo_x86_64=true \
+  --platforms=@snap_platforms//os:android_x86_64
+```
+
+That x86_64 build command has not yet been run on a Linux host.
+
+Linux **desktop** is a separate target. Valdi defines a `_linux` application
+target, but its entry point runs `ValdiStandaloneRuntime::evalScript` and
+`StandaloneViewManager`; it does not create a Linux display window. The
+SnapDrawing C++ core builds on Linux, but the checked-in Linux bootstrap has
+no X11/Wayland window, event, or GPU presentation backend. Thus the current
+Android `GLSurfaceView` cannot simply be rebuilt as a Linux desktop view.
+
+For a native Linux desktop version, keep the Valdi/Three scene and GLB loader;
+add a Linux window and input/lifecycle host, a GPU swapchain/surface, and a
+native JS-to-GPU binding for Three's renderer. SnapDrawing can serve as the 2D
+UI layer if a Linux platform host is added. It does not supply Three's WebGL 2
+or WebGPU API. For the full World OS renderer, the preferred shared 3D path to
+evaluate is Dawn/WebGPU over Vulkan on Linux and Android, Metal on iOS; a
+WebGL 2 bridge over EGL/GLES is an alternative. The current triangle adapter
+is a demonstrated first slice, not either complete renderer binding.
 
 ## Compatibility and next work
 
@@ -126,8 +173,8 @@ multiple meshes/materials, lights, scene render targets and GLSL/TSL shaders.
 
 Priority for the reusable runtime:
 
-1. Complete an Android device validation with screenshots, lifecycle and touch
-   checks; measure the JavaScript render and JNI copy cost on device.
+1. Test resize and measure JavaScript render and JNI copy cost on physical
+   Android hardware.
 2. Port Expo GL's WebGL 2 host surface and methods into Valdi's JS runtime so
    Three's existing WebGL backend can run, including image/texture loading.
 3. Bring up a representative World OS shader scene and compare frame time and

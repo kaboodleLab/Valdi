@@ -1,15 +1,39 @@
-import {
-  BufferAttribute,
-  BufferGeometry,
-  Float32BufferAttribute,
-  InstancedBufferAttribute,
-  InterleavedBuffer,
-  InterleavedBufferAttribute,
-  TriangleFanDrawMode,
-  TriangleStripDrawMode,
-  TrianglesDrawMode,
-  Vector3
-} from "./three.core.js";
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var BufferGeometryUtils_exports = {};
+__export(BufferGeometryUtils_exports, {
+  computeMikkTSpaceTangents: () => computeMikkTSpaceTangents,
+  computeMorphedAttributes: () => computeMorphedAttributes,
+  deepCloneAttribute: () => deepCloneAttribute,
+  deinterleaveAttribute: () => deinterleaveAttribute,
+  deinterleaveGeometry: () => deinterleaveGeometry,
+  estimateBytesUsed: () => estimateBytesUsed,
+  interleaveAttributes: () => interleaveAttributes,
+  mergeAttributes: () => mergeAttributes,
+  mergeGeometries: () => mergeGeometries,
+  mergeGroups: () => mergeGroups,
+  mergeVertices: () => mergeVertices,
+  toCreasedNormals: () => toCreasedNormals,
+  toTrianglesDrawMode: () => toTrianglesDrawMode
+});
+module.exports = __toCommonJS(BufferGeometryUtils_exports);
+var import_three_core = require("./three.core");
 function computeMikkTSpaceTangents(geometry, MikkTSpace, negateSign = true) {
   if (!MikkTSpace || !MikkTSpace.isReady) {
     throw new Error("THREE.BufferGeometryUtils: Initialized MikkTSpace library required.");
@@ -45,7 +69,7 @@ function computeMikkTSpaceTangents(geometry, MikkTSpace, negateSign = true) {
       tangents[i] *= -1;
     }
   }
-  _geometry.setAttribute("tangent", new BufferAttribute(tangents, 4));
+  _geometry.setAttribute("tangent", new import_three_core.BufferAttribute(tangents, 4));
   if (geometry !== _geometry) {
     geometry.copy(_geometry);
   }
@@ -58,7 +82,7 @@ function mergeGeometries(geometries, useGroups = false) {
   const attributes = {};
   const morphAttributes = {};
   const morphTargetsRelative = geometries[0].morphTargetsRelative;
-  const mergedGeometry = new BufferGeometry();
+  const mergedGeometry = new import_three_core.BufferGeometry();
   let offset = 0;
   for (let i = 0; i < geometries.length; ++i) {
     const geometry = geometries[i];
@@ -177,7 +201,7 @@ function mergeAttributes(attributes) {
     arrayLength += attribute.count * itemSize;
   }
   const array = new TypedArray(arrayLength);
-  const result = new BufferAttribute(array, itemSize, normalized);
+  const result = new import_three_core.BufferAttribute(array, itemSize, normalized);
   let offset = 0;
   for (let i = 0; i < attributes.length; ++i) {
     const attribute = attributes[i];
@@ -204,9 +228,9 @@ function deepCloneAttribute(attribute) {
     return deinterleaveAttribute(attribute);
   }
   if (attribute.isInstancedBufferAttribute) {
-    return new InstancedBufferAttribute().copy(attribute);
+    return new import_three_core.InstancedBufferAttribute().copy(attribute);
   }
-  return new BufferAttribute().copy(attribute);
+  return new import_three_core.BufferAttribute().copy(attribute);
 }
 function interleaveAttributes(attributes) {
   let TypedArray;
@@ -222,7 +246,7 @@ function interleaveAttributes(attributes) {
     arrayLength += attribute.array.length;
     stride += attribute.itemSize;
   }
-  const interleavedBuffer = new InterleavedBuffer(new TypedArray(arrayLength), stride);
+  const interleavedBuffer = new import_three_core.InterleavedBuffer(new TypedArray(arrayLength), stride);
   let offset = 0;
   const res = [];
   const getters = ["getX", "getY", "getZ", "getW"];
@@ -231,7 +255,7 @@ function interleaveAttributes(attributes) {
     const attribute = attributes[j];
     const itemSize = attribute.itemSize;
     const count = attribute.count;
-    const iba = new InterleavedBufferAttribute(interleavedBuffer, itemSize, offset, attribute.normalized);
+    const iba = new import_three_core.InterleavedBufferAttribute(interleavedBuffer, itemSize, offset, attribute.normalized);
     res.push(iba);
     offset += itemSize;
     for (let c = 0; c < count; c++) {
@@ -250,9 +274,9 @@ function deinterleaveAttribute(attribute) {
   const array = new cons(count * itemSize);
   let newAttribute;
   if (attribute.isInstancedInterleavedBufferAttribute) {
-    newAttribute = new InstancedBufferAttribute(array, itemSize, normalized, attribute.meshPerAttribute);
+    newAttribute = new import_three_core.InstancedBufferAttribute(array, itemSize, normalized, attribute.meshPerAttribute);
   } else {
-    newAttribute = new BufferAttribute(array, itemSize, normalized);
+    newAttribute = new import_three_core.BufferAttribute(array, itemSize, normalized);
   }
   for (let i = 0; i < count; i++) {
     newAttribute.setX(i, attribute.getX(i));
@@ -394,11 +418,11 @@ function mergeVertices(geometry, tolerance = 1e-4) {
   return result;
 }
 function toTrianglesDrawMode(geometry, drawMode) {
-  if (drawMode === TrianglesDrawMode) {
+  if (drawMode === import_three_core.TrianglesDrawMode) {
     console.warn("THREE.BufferGeometryUtils.toTrianglesDrawMode(): Geometry already defined as triangles.");
     return geometry;
   }
-  if (drawMode === TriangleFanDrawMode || drawMode === TriangleStripDrawMode) {
+  if (drawMode === import_three_core.TriangleFanDrawMode || drawMode === import_three_core.TriangleStripDrawMode) {
     let index = geometry.getIndex();
     if (index === null) {
       const indices = [];
@@ -416,7 +440,7 @@ function toTrianglesDrawMode(geometry, drawMode) {
     }
     const numberOfTriangles = index.count - 2;
     const newIndices = [];
-    if (drawMode === TriangleFanDrawMode) {
+    if (drawMode === import_three_core.TriangleFanDrawMode) {
       for (let i = 1; i <= numberOfTriangles; i++) {
         newIndices.push(index.getX(0));
         newIndices.push(index.getX(i));
@@ -447,15 +471,15 @@ function toTrianglesDrawMode(geometry, drawMode) {
   }
 }
 function computeMorphedAttributes(object) {
-  const _vA = new Vector3();
-  const _vB = new Vector3();
-  const _vC = new Vector3();
-  const _tempA = new Vector3();
-  const _tempB = new Vector3();
-  const _tempC = new Vector3();
-  const _morphA = new Vector3();
-  const _morphB = new Vector3();
-  const _morphC = new Vector3();
+  const _vA = new import_three_core.Vector3();
+  const _vB = new import_three_core.Vector3();
+  const _vC = new import_three_core.Vector3();
+  const _tempA = new import_three_core.Vector3();
+  const _tempB = new import_three_core.Vector3();
+  const _tempC = new import_three_core.Vector3();
+  const _morphA = new import_three_core.Vector3();
+  const _morphB = new import_three_core.Vector3();
+  const _morphC = new import_three_core.Vector3();
   function _calculateMorphedAttributeData(object2, attribute, morphAttribute, morphTargetsRelative2, a2, b2, c2, modifiedAttributeArray) {
     _vA.fromBufferAttribute(attribute, a2);
     _vB.fromBufferAttribute(attribute, b2);
@@ -640,8 +664,8 @@ function computeMorphedAttributes(object) {
       }
     }
   }
-  const morphedPositionAttribute = new Float32BufferAttribute(modifiedPosition, 3);
-  const morphedNormalAttribute = new Float32BufferAttribute(modifiedNormal, 3);
+  const morphedPositionAttribute = new import_three_core.Float32BufferAttribute(modifiedPosition, 3);
+  const morphedNormalAttribute = new import_three_core.Float32BufferAttribute(modifiedNormal, 3);
   return {
     positionAttribute,
     normalAttribute,
@@ -802,21 +826,6 @@ function toCreasedNormals(geometry, creaseAngle = Math.PI / 3) {
       normalArray[3 * i + 2] = sumZ * invLength;
     }
   }
-  resultGeometry.setAttribute("normal", new BufferAttribute(normalArray, 3, false));
+  resultGeometry.setAttribute("normal", new import_three_core.BufferAttribute(normalArray, 3, false));
   return resultGeometry;
 }
-export {
-  computeMikkTSpaceTangents,
-  computeMorphedAttributes,
-  deepCloneAttribute,
-  deinterleaveAttribute,
-  deinterleaveGeometry,
-  estimateBytesUsed,
-  interleaveAttributes,
-  mergeAttributes,
-  mergeGeometries,
-  mergeGroups,
-  mergeVertices,
-  toCreasedNormals,
-  toTrianglesDrawMode
-};

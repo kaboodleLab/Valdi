@@ -1,13 +1,29 @@
-import {
-  AnimationClip,
-  AnimationMixer,
-  Matrix4,
-  Quaternion,
-  QuaternionKeyframeTrack,
-  SkeletonHelper,
-  Vector3,
-  VectorKeyframeTrack
-} from "./three.core.js";
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var SkeletonUtils_exports = {};
+__export(SkeletonUtils_exports, {
+  clone: () => clone,
+  retarget: () => retarget,
+  retargetClip: () => retargetClip
+});
+module.exports = __toCommonJS(SkeletonUtils_exports);
+var import_three_core = require("./three.core");
 function getBoneName(bone, options) {
   if (options.getBoneName !== void 0) {
     return options.getBoneName(bone);
@@ -15,12 +31,12 @@ function getBoneName(bone, options) {
   return options.names[bone.name];
 }
 function retarget(target, source, options = {}) {
-  const quat = new Quaternion(), scale = new Vector3(), relativeMatrix = new Matrix4(), globalMatrix = new Matrix4();
+  const quat = new import_three_core.Quaternion(), scale = new import_three_core.Vector3(), relativeMatrix = new import_three_core.Matrix4(), globalMatrix = new import_three_core.Matrix4();
   options.preserveBoneMatrix = options.preserveBoneMatrix !== void 0 ? options.preserveBoneMatrix : true;
   options.preserveBonePositions = options.preserveBonePositions !== void 0 ? options.preserveBonePositions : true;
   options.useTargetMatrix = options.useTargetMatrix !== void 0 ? options.useTargetMatrix : false;
   options.hip = options.hip !== void 0 ? options.hip : "hip";
-  options.hipInfluence = options.hipInfluence !== void 0 ? options.hipInfluence : new Vector3(1, 1, 1);
+  options.hipInfluence = options.hipInfluence !== void 0 ? options.hipInfluence : new import_three_core.Vector3(1, 1, 1);
   options.scale = options.scale !== void 0 ? options.scale : 1;
   options.names = options.names || {};
   const sourceBones = source.isObject3D ? source.skeleton.bones : getBones(source), bones = target.isObject3D ? target.skeleton.bones : getBones(target);
@@ -108,7 +124,7 @@ function retargetClip(target, source, clip, options = {}) {
   if (!source.isObject3D) {
     source = getHelperFromSkeleton(source);
   }
-  const numFrames = Math.round(clip.duration * (options.fps / 1e3) * 1e3), delta = clip.duration / (numFrames - 1), convertedTracks = [], mixer = new AnimationMixer(source), bones = getBones(target.skeleton), boneDatas = [];
+  const numFrames = Math.round(clip.duration * (options.fps / 1e3) * 1e3), delta = clip.duration / (numFrames - 1), convertedTracks = [], mixer = new import_three_core.AnimationMixer(source), bones = getBones(target.skeleton), boneDatas = [];
   let positionOffset, bone, boneTo, boneData, name;
   mixer.clipAction(clip).play();
   let start = 0, end = numFrames;
@@ -166,13 +182,13 @@ function retargetClip(target, source, clip, options = {}) {
     boneData = boneDatas[i];
     if (boneData) {
       if (boneData.pos) {
-        convertedTracks.push(new VectorKeyframeTrack(
+        convertedTracks.push(new import_three_core.VectorKeyframeTrack(
           ".bones[" + boneData.bone.name + "].position",
           boneData.pos.times,
           boneData.pos.values
         ));
       }
-      convertedTracks.push(new QuaternionKeyframeTrack(
+      convertedTracks.push(new import_three_core.QuaternionKeyframeTrack(
         ".bones[" + boneData.bone.name + "].quaternion",
         boneData.quat.times,
         boneData.quat.values
@@ -180,7 +196,7 @@ function retargetClip(target, source, clip, options = {}) {
     }
   }
   mixer.uncacheAction(clip);
-  return new AnimationClip(clip.name, -1, convertedTracks);
+  return new import_three_core.AnimationClip(clip.name, -1, convertedTracks);
 }
 function clone(source) {
   const sourceLookup = /* @__PURE__ */ new Map();
@@ -214,7 +230,7 @@ function getBones(skeleton) {
   return Array.isArray(skeleton) ? skeleton : skeleton.bones;
 }
 function getHelperFromSkeleton(skeleton) {
-  const source = new SkeletonHelper(skeleton.bones[0]);
+  const source = new import_three_core.SkeletonHelper(skeleton.bones[0]);
   source.skeleton = skeleton;
   return source;
 }
@@ -224,8 +240,3 @@ function parallelTraverse(a, b, callback) {
     parallelTraverse(a.children[i], b.children[i], callback);
   }
 }
-export {
-  clone,
-  retarget,
-  retargetClip
-};

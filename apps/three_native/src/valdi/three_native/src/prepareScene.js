@@ -1,17 +1,50 @@
-import {
-  Box3,
-  Matrix4,
-  PerspectiveCamera,
-  Scene,
-  Vector3
-} from "./vendor/three.core.js";
-import { GLTFLoader } from "./vendor/GLTFLoader.js";
+"use strict";
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
+var prepareScene_exports = {};
+__export(prepareScene_exports, {
+  createPlatterScene: () => createPlatterScene
+});
+module.exports = __toCommonJS(prepareScene_exports);
+var import_three_core = require("./vendor/three.core");
+var import_GLTFLoader = require("./vendor/GLTFLoader");
+// Valdi's Hermes runtime does not provide AbortController. Three's loaders
+// construct one even when parsing an in-memory GLB with no network requests.
+if (typeof globalThis.AbortController === "undefined") {
+  globalThis.AbortController = class {
+    constructor() {
+      this.signal = {
+        aborted: false,
+        addEventListener() {},
+        removeEventListener() {}
+      };
+    }
+    abort() {
+      this.signal.aborted = true;
+    }
+  };
+}
 async function createPlatterScene(bytes) {
   const arrayBuffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   const gltf = await new Promise((resolve, reject) => {
-    new GLTFLoader().parse(arrayBuffer, "", resolve, reject);
+    new import_GLTFLoader.GLTFLoader().parse(arrayBuffer, "", resolve, reject);
   });
-  const scene = new Scene();
+  const scene = new import_three_core.Scene();
   const model = gltf.scene;
   scene.add(model);
   let mesh = null;
@@ -36,17 +69,17 @@ async function createPlatterScene(bytes) {
     vertexData[offset + 4] = normal.getY(index);
     vertexData[offset + 5] = normal.getZ(index);
   }
-  const bounds = new Box3().setFromObject(model);
-  const size = bounds.getSize(new Vector3());
-  const center = bounds.getCenter(new Vector3());
+  const bounds = new import_three_core.Box3().setFromObject(model);
+  const size = bounds.getSize(new import_three_core.Vector3());
+  const center = bounds.getCenter(new import_three_core.Vector3());
   model.position.sub(center);
   model.scale.setScalar(1.5 / Math.max(size.x, size.y, size.z));
   model.rotation.x = -0.55;
-  const camera = new PerspectiveCamera(48, 1, 0.01, 100);
+  const camera = new import_three_core.PerspectiveCamera(48, 1, 0.01, 100);
   camera.position.set(0, 0.2, 2.45);
   camera.lookAt(0, 0, 0);
-  const viewProjection = new Matrix4();
-  const modelViewProjection = new Matrix4();
+  const viewProjection = new import_three_core.Matrix4();
+  const modelViewProjection = new import_three_core.Matrix4();
   const transform = new Float32Array(32);
   let angle = 0;
   return {
@@ -59,6 +92,8 @@ async function createPlatterScene(bytes) {
     },
     resize(width, height) {
       camera.aspect = Math.max(1, width) / Math.max(1, height);
+      // Keep the whole platter visible on narrow phone screens as it rotates.
+      camera.position.z = Math.max(2.45, 0.85 / (Math.tan(24 * Math.PI / 180) * camera.aspect));
       camera.updateProjectionMatrix();
     },
     frame(deltaSeconds, dragYaw = 0) {
@@ -85,6 +120,3 @@ async function createPlatterScene(bytes) {
     }
   };
 }
-export {
-  createPlatterScene
-};

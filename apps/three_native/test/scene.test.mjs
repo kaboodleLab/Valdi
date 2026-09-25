@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { test } from 'node:test';
-import { createPlatterScene } from '../src/valdi/three_native/src/prepareScene.js';
+import sceneModule from '../src/valdi/three_native/src/prepareScene.js';
+
+const { createPlatterScene } = sceneModule;
 
 test('the World OS platter loads in Three and yields animated GPU input', async () => {
   const asset = await readFile(new URL('../src/valdi/three_native/src/ui-platter-base.glb.bin', import.meta.url));
