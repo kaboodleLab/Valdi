@@ -1,4 +1,4 @@
-# Valdi + Three.js native Android slice
+# Valdi + Three.js native Android slice and Linux probes
 
 This example imports **Three.js r186** inside Valdi's JavaScript runtime, parses
 World OS's existing `assets/media/props/ui-platter-base.glb` with the matching
@@ -154,12 +154,13 @@ SnapDrawing C++ core builds on Linux, but the checked-in Linux bootstrap has
 no X11/Wayland window, event, or GPU presentation backend. Thus the current
 Android `GLSurfaceView` cannot simply be rebuilt as a Linux desktop view.
 
-The [Linux Dawn display probe](linux_dawn_probe/README.md) has since run the
-same platter through Three r186's **actual `WebGPURenderer`**, Dawn/Vulkan and
-the Intel GPU on `192.168.1.41`. It also opened a live GNOME Wayland window.
-The probe uses Node's Dawn binding and copies each frame back to an SDL
-viewer; it establishes renderer and window viability but is not yet running
-inside Valdi or presenting a GPU swapchain directly.
+The [Linux Dawn probes](linux_dawn_probe/README.md) now run the same platter
+through Three r186's **actual `WebGPURenderer`**, Dawn/Vulkan and the Intel GPU
+on `192.168.1.41`. One probe presents the Three scene directly to an Xwayland
+swapchain, including its glass material, typed-array texture upload and a
+targeted render-target readback. A second host uses the current official Dawn
+C API to present directly to GNOME Wayland. These are separate programs; the
+Three renderer is not yet connected to Valdi or the native Wayland host.
 
 For a native Linux desktop version, keep the Valdi/Three scene and GLB loader;
 add a Linux window and input/lifecycle host, a GPU swapchain/surface, and a
@@ -180,10 +181,9 @@ multiple meshes/materials, lights, scene render targets and GLSL/TSL shaders.
 
 Priority for the reusable runtime:
 
-1. Replace the Linux probe's readback viewer with a Wayland-backed Dawn
-   `WGPUSurface` and direct `GPUCanvasContext` presentation.
-2. Adapt React Native WebGPU's JSI binding to Valdi's Hermes runtime and JS
-   scheduler, then run the platter inside a Valdi Linux application window.
+1. Adapt a current Dawn/WebGPU JSI binding to Valdi's Hermes runtime and JS
+   scheduler, and connect it to the verified native Wayland `WGPUSurface`.
+2. Add a Valdi Linux window/input host and run the platter in that runtime.
 3. Expand browser API compatibility and validate a representative WorldOS
    shader scene and its materials, textures, and readback paths.
 4. Reuse the WebGPU binding on Android and iOS, with Vulkan and Metal surfaces
