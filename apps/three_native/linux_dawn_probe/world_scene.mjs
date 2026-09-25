@@ -12,43 +12,9 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
   }
   const root = resolve(process.env.WORLD_OS_ROOT);
   const engine = join(root, 'kernel/engine');
-  const fromEngine = name => import(pathToFileURL(join(engine, name)).href);
-  const [{ createGridMaterial }, { createGroupFootprint }, { createGroupGardenReveal },
-    { createGridSurfaceSource }, { createTileGeometryFactory },
-    { createWorldTileDefaults, createWorldToneGLSL, createWorldGridColors,
-      createWorldGlossGLSL }] = await Promise.all([
-    fromEngine('grid-material.js'), fromEngine('tile-drag-footprint.js'),
-    fromEngine('group-garden-reveal.js'), fromEngine('grid-surface-source.js'),
-    fromEngine('tile-geometry.js'), fromEngine('world-render-constants.js'),
-  ]);
-
-  const tile = createWorldTileDefaults();
-  const exposure = tile.EXPOSURE;
-  const W = { core: {
-    TILE: tile, ...createWorldGridColors(THREE), CELL: 1, PLANE: 600,
-    FADE_START: 4.6, FADE_END: 9.6,
-    KEY_DIR: new THREE.Vector3(.66, .62, .42).normalize(),
-    NIGHT_K: { value: 0 },
-    SUN_TINT: { value: new THREE.Color(1, 1, 1) },
-    SUN_TINT_A: { value: new THREE.Color(1, 1, 1) },
-    SUN_TINT_B: { value: new THREE.Color(1, 1, 1) },
-    SUN_LUM: { value: 1 }, SUN_AMT: { value: 0 },
-    SUN_GRAD_DIR: { value: new THREE.Vector2(1, 0) },
-    SUN_GRID: { value: new THREE.Vector2() },
-    SUN_POOL: { value: 0 }, SUN_SPLIT: { value: 0 },
-  }, grid: {
-    groupFootprint: createGroupFootprint(THREE),
-    groupGardenReveal: createGroupGardenReveal(THREE),
-  } };
-  W.core.TONE_GLSL = createWorldToneGLSL(tile);
-  W.core.GLOSS_GLSL = createWorldGlossGLSL();
-
-  const { gridUniforms: uniforms, GRID_FRAG: fragmentShader } = createGridSurfaceSource(THREE, W);
-
-  // Exactly the production painted-grid node material and shader declarations.
-  const material = createGridMaterial({
-    THREE, nodes, tsl, uniforms, fragmentShader, exposure,
-  });
+  const { createNativeGridScene } = await import(pathToFileURL(join(engine, 'native-grid-scene.js')).href);
+  const worldGrid = createNativeGridScene({ THREE, nodes, tsl });
+  const { core, uniforms, material, tileGeometry } = worldGrid;
   const grid = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), material);
   grid.rotation.x = -Math.PI / 2;
   grid.position.y = -.002;
@@ -57,7 +23,7 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
   // makes Three copy the canvas to convert it, but this addon only exposes
   // RenderAttachment usage for acquired surface textures.
   renderer.toneMapping = THREE.NoToneMapping;
-  scene.background = W.core.COL_BG;
+  scene.background = core.COL_BG;
 
   const camera = new THREE.OrthographicCamera();
   camera.position.set(5.3, 7.2, 8.1);
@@ -84,10 +50,9 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
   // Reuse the exact rounded tile geometry and baked vertex color shared with engine03.
   // The material here remains a simple physical stand-in for its much larger
   // node lighting/shadow owner.
-  const tileGeometry = createTileGeometryFactory(THREE, W)();
   const tileMaterial = new THREE.MeshPhysicalMaterial({
-    color: W.core.COL_GRID_FILL.clone(), roughness: tile.ROUGH,
-    metalness: 0, clearcoat: tile.CLEARCOAT, vertexColors: true,
+    color: core.COL_GRID_FILL.clone(), roughness: core.TILE.ROUGH,
+    metalness: 0, clearcoat: core.TILE.CLEARCOAT, vertexColors: true,
   });
   for (const [x, z] of [[0, 0], [-2, -1], [2, 1], [1, -2]]) {
     const tile = new THREE.Mesh(tileGeometry, tileMaterial);
@@ -135,9 +100,7 @@ export async function createWorldScene({ THREE, scene, renderer, model, width, h
       uniforms.uCamPos.value.copy(camera.position);
     },
     dispose() {
-      grid.geometry.dispose(); material.dispose(); tileGeometry.dispose(); tileMaterial.dispose();
-      W.grid.groupFootprint.uniforms.uDragGroupMap.value.dispose();
-      W.grid.groupGardenReveal.dispose();
+      grid.geometry.dispose(); tileMaterial.dispose(); worldGrid.dispose();
     },
   };
 }

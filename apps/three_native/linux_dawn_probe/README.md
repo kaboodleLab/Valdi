@@ -54,12 +54,13 @@ export WORLD_OS_ROOT=/path/to/spaos/desktop/world_os
 npm run world-scene
 ```
 
-This run imports WorldOS's `grid-material.js`, `grid-surface-source.js`,
-`tile-geometry.js`, and `world-render-constants.js` directly from
-`WORLD_OS_ROOT`. The production engine uses those same factories. The native
-host keeps no parsed or copied shader, tile geometry, or palette. This was
-validated against SPAOS `b93b3560`; the earlier `0f494e94` snapshot does not
-have those modules.
+This run imports WorldOS's `native-grid-scene.js` from `WORLD_OS_ROOT`.
+That factory assembles `grid-material.js`, `grid-surface-source.js`,
+`tile-geometry.js`, and `world-render-constants.js`; the production engine
+uses those same lower-level factories. The native host keeps no parsed or
+copied shader, tile geometry, or palette. Use the companion SPAOS
+`codex/world-native-scene-contract` checkout at `c1759c9f`; the earlier `0f494e94`
+snapshot does not have this API.
 The diagnostic enables the painted lattice path and twilight values so the
 cell shading and animated wave are visible. Mouse movement updates the real
 hover uniforms; clicking restarts the wave at that cell; dragging orbits the
