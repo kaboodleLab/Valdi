@@ -66,6 +66,12 @@ Ninja, Python, SDL/X11 development headers, and ample disk space. Host GCC 16
 does not compile the pinned Tint sources. Do not use
 `--recycle-surface-textures` with the unmodified prebuilt addon.
 
+On the Linux Intel PTL/Vulkan host, the corrected addon rendered 36,000
+WorldOS scene frames in 11 minutes 37 seconds with forced GC every 30 frames.
+The 32×32 readback passed, the process exited cleanly, and systemd measured
+a 112.9 MiB memory peak. Omitting `--frames` with the corrected addon keeps
+the window running until it is closed.
+
 ## Run the WorldOS scene slice
 
 With a matching SPAOS source checkout and the dependencies above installed:
