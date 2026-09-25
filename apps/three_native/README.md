@@ -154,6 +154,13 @@ SnapDrawing C++ core builds on Linux, but the checked-in Linux bootstrap has
 no X11/Wayland window, event, or GPU presentation backend. Thus the current
 Android `GLSurfaceView` cannot simply be rebuilt as a Linux desktop view.
 
+The [Linux Dawn display probe](linux_dawn_probe/README.md) has since run the
+same platter through Three r186's **actual `WebGPURenderer`**, Dawn/Vulkan and
+the Intel GPU on `192.168.1.41`. It also opened a live GNOME Wayland window.
+The probe uses Node's Dawn binding and copies each frame back to an SDL
+viewer; it establishes renderer and window viability but is not yet running
+inside Valdi or presenting a GPU swapchain directly.
+
 For a native Linux desktop version, keep the Valdi/Three scene and GLB loader;
 add a Linux window and input/lifecycle host, a GPU swapchain/surface, and a
 native JS-to-GPU binding for Three's renderer. SnapDrawing can serve as the 2D
@@ -173,15 +180,14 @@ multiple meshes/materials, lights, scene render targets and GLSL/TSL shaders.
 
 Priority for the reusable runtime:
 
-1. Test resize and measure JavaScript render and JNI copy cost on physical
-   Android hardware.
-2. Port Expo GL's WebGL 2 host surface and methods into Valdi's JS runtime so
-   Three's existing WebGL backend can run, including image/texture loading.
-3. Bring up a representative World OS shader scene and compare frame time and
-   visual output with the desktop renderer.
-4. Evaluate the React Native WebGPU Dawn layer against Valdi's JS engine and
-   Three's `Backend` contract. If adopted, use Metal on iOS and Vulkan on
-   Android, with one shared resource-lifetime test suite.
+1. Replace the Linux probe's readback viewer with a Wayland-backed Dawn
+   `WGPUSurface` and direct `GPUCanvasContext` presentation.
+2. Adapt React Native WebGPU's JSI binding to Valdi's Hermes runtime and JS
+   scheduler, then run the platter inside a Valdi Linux application window.
+3. Expand browser API compatibility and validate a representative WorldOS
+   shader scene and its materials, textures, and readback paths.
+4. Reuse the WebGPU binding on Android and iOS, with Vulkan and Metal surfaces
+   and shared lifecycle tests. Measure native call and frame costs on hardware.
 
 World OS's asset licensing is unresolved; this local prototype is not intended
 for distribution.
