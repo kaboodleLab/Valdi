@@ -7,6 +7,7 @@ Valdi Linux runtime, but neither is a Valdi application yet.
 | Program | JavaScript / rendering | Window and presentation |
 | --- | --- | --- |
 | `direct.mjs` | Three r186 `WebGPURenderer` on Dawn | SDL2 X11 window (Xwayland under GNOME Wayland); direct GPU swapchain |
+| `direct.mjs --world-scene` | WorldOS's painted-grid TSL material and authored platter GLB | Same direct GPU swapchain; scene input and uniform animation |
 | `wayland_dawn_smoke.cpp` | Current official Dawn C API; animated clear | SDL3 native Wayland window; direct GPU swapchain |
 | `run.mjs` + `viewer.cpp` | Three r186 `WebGPURenderer` on Dawn | Diagnostic SDL2 Wayland viewer; GPU readback and CPU upload every frame |
 
@@ -43,6 +44,32 @@ swapchain texture wrappers are retained until process exit to avoid an addon
 finalizer assertion. This is a validation program, not a long-running
 production runtime. The current Dawn/Valdi binding must own surface textures
 correctly.
+
+## Run the WorldOS scene slice
+
+With a matching SPAOS source checkout and the dependencies above installed:
+
+```sh
+export WORLD_OS_ROOT=/path/to/spaos/desktop/world_os
+npm run world-scene
+```
+
+This run imports WorldOS's `grid-material.js` and its helpers directly from
+`WORLD_OS_ROOT`. It reads the authored grid uniforms, shader declarations,
+tile geometry, and baked vertex colors from `01-light-and-state.js` and
+`03-ground.js`, using the same source extraction approach as WorldOS's grid
+comparison fixture. It does not maintain a fork of the shader or geometry.
+The source markers are checked and fail clearly when they change; the scene
+was validated against SPAOS `0f494e94`.
+The diagnostic enables the painted lattice path and twilight values so the
+cell shading and animated wave are visible. Mouse movement updates the real
+hover uniforms; clicking restarts the wave at that cell; dragging orbits the
+camera. The tile material uses a simple physical stand-in: WorldOS's full
+tile node lighting, shadow pipeline, and shell layout are not in this host.
+
+This is a genuine WorldOS shader/asset slice running on native WebGPU. It is
+still hosted by Node and Xwayland. The DOM HUD, app surfaces, image decoding,
+services, and Valdi/Wayland binding remain separate integration work.
 
 ## Build the native Wayland surface host
 

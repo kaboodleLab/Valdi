@@ -28,6 +28,7 @@ const window = sdl.video.createWindow({
 let renderer;
 let device;
 let surface;
+let sceneState;
 const heldSurfaceTextures = [];
 let stopped = false;
 let frame = 0;
@@ -41,12 +42,14 @@ const maxFrames = maxFramesArg ? Number(maxFramesArg.slice(9)) : 36000;
 if (!Number.isSafeInteger(maxFrames) || maxFrames <= 0) {
   throw new Error('--frames must be a positive integer');
 }
-const worldGlass = process.argv.includes('--world-glass');
+const worldScene = process.argv.includes('--world-scene');
+const worldGlass = process.argv.includes('--world-glass') || worldScene;
 const readbackTest = process.argv.includes('--readback-test');
 
 function stop(code = 0) {
   if (stopped) return;
   stopped = true;
+  sceneState?.dispose();
   renderer?.dispose();
   device?.destroy();
   dawn.destroy(gpu);
@@ -56,10 +59,15 @@ function stop(code = 0) {
 
 window.on('close', () => stop());
 window.on('keyDown', event => { if (event.key === 'Escape' || event.scancode === 41) stop(); });
-window.on('mouseButtonDown', event => { dragging = true; lastX = event.x; });
+window.on('mouseButtonDown', event => {
+  dragging = true; lastX = event.x;
+  sceneState?.pointer(event.x, event.y);
+  sceneState?.click(frame);
+});
 window.on('mouseButtonUp', () => { dragging = false; });
 window.on('mouseMove', event => {
   if (dragging) { yaw += (event.x - lastX) * 0.01; lastX = event.x; }
+  else sceneState?.pointer(event.x, event.y);
 });
 
 try {
@@ -126,32 +134,43 @@ try {
       if (object.isMesh) object.material = platterMaterial;
     });
 
-    // A small texture-backed stage makes the refraction visible and exercises
-    // typed-array texture upload without requiring a DOM canvas/image decoder.
-    const pixels = new Uint8Array(64 * 64 * 4);
-    for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
-      const index = (y * 64 + x) * 4;
-      const bright = ((x >> 3) + (y >> 3)) % 2 === 0;
-      pixels[index] = bright ? 235 : 25;
-      pixels[index + 1] = bright ? 160 : 65;
-      pixels[index + 2] = bright ? 75 : 145;
-      pixels[index + 3] = 255;
+    if (!worldScene) {
+      // A small texture-backed stage makes the refraction visible and exercises
+      // typed-array upload without requiring a DOM canvas/image decoder.
+      const pixels = new Uint8Array(64 * 64 * 4);
+      for (let y = 0; y < 64; y++) for (let x = 0; x < 64; x++) {
+        const index = (y * 64 + x) * 4;
+        const bright = ((x >> 3) + (y >> 3)) % 2 === 0;
+        pixels[index] = bright ? 235 : 25;
+        pixels[index + 1] = bright ? 160 : 65;
+        pixels[index + 2] = bright ? 75 : 145;
+        pixels[index + 3] = 255;
+      }
+      const backdrop = new THREE.DataTexture(pixels, 64, 64);
+      backdrop.colorSpace = THREE.SRGBColorSpace;
+      backdrop.needsUpdate = true;
+      const stage = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8),
+        new THREE.MeshBasicMaterial({ map: backdrop, toneMapped: false }));
+      stage.position.z = -0.4;
+      scene.add(stage);
     }
-    const backdrop = new THREE.DataTexture(pixels, 64, 64);
-    backdrop.colorSpace = THREE.SRGBColorSpace;
-    backdrop.needsUpdate = true;
-    const stage = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.8),
-      new THREE.MeshBasicMaterial({ map: backdrop, toneMapped: false }));
-    stage.position.z = -0.4;
-    scene.add(stage);
   }
   scene.add(model);
   scene.add(new THREE.AmbientLight(0xffffff, 1.2));
   const light = new THREE.DirectionalLight(0xffffff, 2.5);
   light.position.set(-2, 3, 4);
   scene.add(light);
-  const camera = new THREE.PerspectiveCamera(48, canvas.width / canvas.height, 0.1, 10);
-  camera.position.z = 3;
+  let camera;
+  if (worldScene) {
+    const { createWorldScene } = await import('./world_scene.mjs');
+    sceneState = await createWorldScene({
+      THREE, scene, renderer, model, width: canvas.width, height: canvas.height,
+    });
+    camera = sceneState.camera;
+  } else {
+    camera = new THREE.PerspectiveCamera(48, canvas.width / canvas.height, 0.1, 10);
+    camera.position.z = 3;
+  }
 
   window.on('resize', event => {
     if (!surface || stopped || !event.pixelWidth || !event.pixelHeight) return;
@@ -159,8 +178,8 @@ try {
     canvas.width = event.pixelWidth;
     canvas.height = event.pixelHeight;
     renderer.setSize(canvas.width, canvas.height, false);
-    camera.aspect = canvas.width / canvas.height;
-    camera.updateProjectionMatrix();
+    if (sceneState) sceneState.resize(canvas.width, canvas.height);
+    else { camera.aspect = canvas.width / canvas.height; camera.updateProjectionMatrix(); }
   });
 
   if (readbackTest) {
@@ -187,7 +206,8 @@ try {
 
   function draw() {
     if (stopped) return;
-    model.rotation.y = frame * 0.012 + yaw;
+    if (sceneState) sceneState.tick(frame, yaw);
+    else model.rotation.y = frame * 0.012 + yaw;
     renderer.render(scene, camera);
     surface.swap();
     frame += 1;

@@ -4,7 +4,8 @@
   "scripts": {
     "render": "node run.mjs",
     "live": "node run.mjs --stream | ./viewer",
-    "direct": "node direct.mjs --world-glass --readback-test"
+    "direct": "node direct.mjs --world-glass --readback-test",
+    "world-scene": "node direct.mjs --world-scene --readback-test"
   },
   "dependencies": {
     "@kmamal/gpu": "0.2.0",
