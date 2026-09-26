@@ -115,9 +115,22 @@ the native window rendered those positions. An isolated 360-frame fixture run
 observed a revision change from 1 to 2 and added a browser tile during the
 same process. A full GPU frame from the active volume was inspected.
 
+The optional `WORLD_OS_NATIVE_FLOOR` input reads a compositor `SpaceOnFloor`
+snapshot. With `WORLD_OS_NATIVE_PREVIEWS` set to a directory of raw RGBA
+window pictures, the scene shows the first available window on each space's
+tile and updates its texture by preview generation. The native host restricts
+reads to numeric `<space>.<window>.rgba` names and verifies the byte count
+against the compositor's dimensions. A synthetic browser picture was rendered
+through Hermes, Three and Dawn on the Linux host and visually inspected; the
+live SPAOS picture feed has not been connected to this demo. SPAOS can produce
+metadata snapshots when started with `SPAOS_NATIVE_FLOOR_OUT`; see its
+`desktop/docs/native-world-renderer.md`.
+
 ```sh
 WORLD_OS_NATIVE_ASSETS=/tmp/valdi-world-hermes-assets \
 WORLD_OS_NATIVE_STATE=/path/to/WorldOS/State/world.json \
+WORLD_OS_NATIVE_FLOOR=/path/to/floor.json \
+WORLD_OS_NATIVE_PREVIEWS=/path/to/preview-directory \
 XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland \
   bazel-bin/apps/three_native/three_native_linux_webgpu_surface_probe \
   --interactive /tmp/valdi-three-world-home-bundle.js

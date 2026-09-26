@@ -12,6 +12,8 @@
 #include <algorithm>
 #include <chrono>
 #include <cctype>
+#include <cmath>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
@@ -109,7 +111,9 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
-    const char* title = std::getenv("WORLD_OS_NATIVE_STATE")
+    const char* title = std::getenv("WORLD_OS_NATIVE_FLOOR")
+        ? "WorldOS live floor - Valdi Three/Dawn"
+        : std::getenv("WORLD_OS_NATIVE_STATE")
         ? "WorldOS live layout - Valdi Three/Dawn"
         : "WorldOS home scene - Valdi Three/Dawn";
     SDL_Window* window = SDL_CreateWindow(title, kWidth, kHeight, SDL_WINDOW_VULKAN);
@@ -181,6 +185,52 @@ int main(int argc, char** argv) {
                         }
                     });
                 jsi->global().setProperty(*jsi, "__nativeReadShellState", std::move(readState));
+            }
+            if (const char* floorPath = std::getenv("WORLD_OS_NATIVE_FLOOR")) {
+                const std::string path(floorPath);
+                auto readFloor = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeReadShellFloor"), 0,
+                    [path](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                           const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        try {
+                            return facebook::jsi::String::createFromUtf8(js, FileBuffer(path).text());
+                        } catch (const std::exception& error) {
+                            throw facebook::jsi::JSError(js, error.what());
+                        }
+                    });
+                jsi->global().setProperty(*jsi, "__nativeReadShellFloor", std::move(readFloor));
+            }
+            if (const char* previewRoot = std::getenv("WORLD_OS_NATIVE_PREVIEWS")) {
+                const std::string root(previewRoot);
+                auto readPreview = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeReadShellPreview"), 4,
+                    [root](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                           const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 4) throw facebook::jsi::JSError(js, "Expected preview coordinates and size");
+                        uint64_t values[4];
+                        for (size_t i = 0; i < 4; ++i) {
+                            if (!args[i].isNumber()) throw facebook::jsi::JSError(js, "Invalid preview coordinate");
+                            const double value = args[i].getNumber();
+                            if (!std::isfinite(value) || value < 1 || value > 9007199254740991.0 ||
+                                std::floor(value) != value)
+                                throw facebook::jsi::JSError(js, "Invalid preview coordinate");
+                            values[i] = static_cast<uint64_t>(value);
+                        }
+                        if (values[0] > 1000000 || values[2] > 4096 || values[3] > 4096 ||
+                            values[2] * values[3] > 8 * 1024 * 1024)
+                            throw facebook::jsi::JSError(js, "Invalid preview dimensions");
+                        const auto path = root + "/" + std::to_string(values[0]) + "." +
+                                          std::to_string(values[1]) + ".rgba";
+                        try {
+                            auto bytes = std::make_shared<FileBuffer>(path);
+                            if (bytes->size() != values[2] * values[3] * 4)
+                                throw std::runtime_error("Preview byte count does not match dimensions");
+                            return facebook::jsi::ArrayBuffer(js, bytes);
+                        } catch (const std::exception& error) {
+                            throw facebook::jsi::JSError(js, error.what());
+                        }
+                    });
+                jsi->global().setProperty(*jsi, "__nativeReadShellPreview", std::move(readPreview));
             }
             if (const char* capturePath = std::getenv("THREE_NATIVE_LINUX_CAPTURE")) {
                 const std::string path(capturePath);
