@@ -113,6 +113,8 @@ To follow an active SPAOS WorldOS volume, set `WORLD_OS_NATIVE_STATE` to its
 `WorldOS/State/world.json` path. The native host reads that file without writing
 to it. The scene polls its `rev`, places the jar from `layout.jar`, places
 authored app props from the layout, and recognizes SPAOS app rows in `props`.
+Saved SPAOS placements remain visible as launchable icons in a fresh compositor;
+a live preview card replaces an icon at the same tile when its window appears.
 It updates the visible scene when the volume revision changes. On the demo
 host, the active clean volume had jar `[1,0]` and a browser prop `[2,0]`;
 the native window rendered those positions. An isolated 360-frame fixture run
@@ -175,7 +177,7 @@ XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland
 
 On the Intel Wayland host, the 120-frame run passed and a full GPU frame showed
 the WorldOS grid, tiles, seven GLB props and jar geometry. The current GNOME
-demo runs as `valdi-native-world-shell-v6.service`: a separate SPAOS compositor
+demo runs as `valdi-native-world-shell-v7.service`: a separate SPAOS compositor
 window with this renderer as its World client. It mapped at 1920×1200, received
 35 visible app entries, and continued presenting frames. The existing SPAOS
 desktop session stayed running. This demo was validated through on-host logs;

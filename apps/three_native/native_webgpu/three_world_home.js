@@ -274,20 +274,20 @@ async function render() {
       const cell = layout[layoutKey[item.name]];
       if (isCell(cell)) addPosition(item.name, cell);
     }
-    if (floor) {
-      for (const space of spaces) {
-        if (!Number.isInteger(space?.at?.x) || !Number.isInteger(space?.at?.z)) continue;
-        const app = String(space.apps?.[0] || space.pending || '').split('.').pop().toLowerCase();
-        if (iconByName.has(app)) addPosition(app, [space.at.x, space.at.z]);
+    // Saved SPAOS rows are the person's app placement, even in a fresh
+    // compositor before that app has a window. A live preview replaces the
+    // icon once the floor reports a window at the same tile.
+    for (const prop of props) {
+      if (prop?.kind !== 'spaos' || typeof prop.app !== 'string') continue;
+      const app = prop.app.split('.').pop().toLowerCase();
+      if (iconByName.has(app) && Number.isInteger(prop.tx) && Number.isInteger(prop.tz)) {
+        addPosition(app, [prop.tx, prop.tz]);
       }
-    } else {
-      for (const prop of props) {
-        if (prop?.kind !== 'spaos' || typeof prop.app !== 'string') continue;
-        const app = prop.app.split('.').pop().toLowerCase();
-        if (iconByName.has(app) && Number.isInteger(prop.tx) && Number.isInteger(prop.tz)) {
-          addPosition(app, [prop.tx, prop.tz]);
-        }
-      }
+    }
+    for (const space of spaces) {
+      if (!Number.isInteger(space?.at?.x) || !Number.isInteger(space?.at?.z)) continue;
+      const app = String(space.apps?.[0] || space.pending || '').split('.').pop().toLowerCase();
+      if (iconByName.has(app)) addPosition(app, [space.at.x, space.at.z]);
     }
     const cardCells = new Set();
     const currentSpaces = new Set();
