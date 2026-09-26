@@ -109,8 +109,10 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
-    SDL_Window* window = SDL_CreateWindow("WorldOS Valdi Hermes WebGPU", kWidth, kHeight,
-                                          SDL_WINDOW_VULKAN);
+    const char* title = std::getenv("WORLD_OS_NATIVE_STATE")
+        ? "WorldOS live layout - Valdi Three/Dawn"
+        : "WorldOS home scene - Valdi Three/Dawn";
+    SDL_Window* window = SDL_CreateWindow(title, kWidth, kHeight, SDL_WINDOW_VULKAN);
     if (window == nullptr) {
         std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         SDL_Quit();
@@ -166,6 +168,20 @@ int main(int argc, char** argv) {
         jsi->global().setProperty(*jsi, "__webgpuSurfaceDone", std::move(done));
         if (!script.empty()) {
             jsi->global().setProperty(*jsi, "__nativeFrameLimit", frameLimit);
+            if (const char* statePath = std::getenv("WORLD_OS_NATIVE_STATE")) {
+                const std::string path(statePath);
+                auto readState = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeReadShellState"), 0,
+                    [path](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                           const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        try {
+                            return facebook::jsi::String::createFromUtf8(js, FileBuffer(path).text());
+                        } catch (const std::exception& error) {
+                            throw facebook::jsi::JSError(js, error.what());
+                        }
+                    });
+                jsi->global().setProperty(*jsi, "__nativeReadShellState", std::move(readState));
+            }
             if (const char* capturePath = std::getenv("THREE_NATIVE_LINUX_CAPTURE")) {
                 const std::string path(capturePath);
                 auto saveFrame = facebook::jsi::Function::createFromHostFunction(

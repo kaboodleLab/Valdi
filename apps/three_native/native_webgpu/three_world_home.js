@@ -83,7 +83,9 @@ async function render() {
   light.position.set(-2, 3, 4);
   scene.add(light);
 
-  const camera = new THREE.OrthographicCamera(-5.8, 5.8, 5.8, -5.8, .1, 100);
+  const liveShell = typeof __nativeReadShellState === 'function';
+  const extent = liveShell ? 3.8 : 5.8;
+  const camera = new THREE.OrthographicCamera(-extent, extent, extent, -extent, .1, 100);
   const center = new THREE.Vector3(-1.5, 0, -2.2);
   camera.position.copy(center).add(new THREE.Vector3(5.3, 7.2, 8.1));
   camera.lookAt(center);
@@ -109,14 +111,17 @@ async function render() {
     { name: 'browser', x: -2, z: 0 },
     { name: 'files', x: 1, z: -1, size: .68 },
   ];
-  for (const [x, z] of [...homeIcons.map(({ x, z }) => [x, z]), [1, 0]]) {
+  const tileByName = new Map();
+  for (const { name, x, z } of [...homeIcons, { name: 'jar', x: 1, z: 0 }]) {
     const tile = new THREE.Mesh(tileGeometry, tileMaterial);
     tile.position.set(x, 0, z);
     scene.add(tile);
+    tileByName.set(name, tile);
   }
   __webgpuSurfaceStage('WorldOS grid and home tiles ready');
 
   const manifest = JSON.parse(__nativeReadTextAsset('manifest.json'));
+  const iconByName = new Map();
   for (const { name, x, z, size = .55 } of homeIcons) {
     const glb = __nativeReadAsset(`${name}.glb`);
     const loader = nativeIconLoader(name, manifest);
@@ -127,8 +132,11 @@ async function render() {
     icon.scale.setScalar(size / Math.max(extent.x, extent.y, extent.z));
     const fitted = new THREE.Box3().setFromObject(icon);
     const iconCenter = fitted.getCenter(new THREE.Vector3());
-    icon.position.set(x - iconCenter.x, core.TILE.H + .015 - fitted.min.y, z - iconCenter.z);
+    const offset = new THREE.Vector3(-iconCenter.x, core.TILE.H + .015 - fitted.min.y,
+      -iconCenter.z);
+    icon.position.set(x + offset.x, offset.y, z + offset.z);
     scene.add(icon);
+    iconByName.set(name, { icon, offset });
     __webgpuSurfaceStage(`WorldOS icon loaded: ${name}`);
   }
 
@@ -156,6 +164,91 @@ async function render() {
   scene.add(jar);
   __webgpuSurfaceStage('WorldOS jar profile ready');
 
+  const layoutKey = {
+    weather: 'weathersun', calendar: 'calendar', mail: 'mail',
+    notes: 'ib:notes', whatsapp: 'ib:whatsapp', browser: 'ib:browser',
+    files: 'stack',
+  };
+  const extraByName = new Map();
+  let seenRevision = null;
+  function isCell(value) {
+    return Array.isArray(value) && value.length === 2 &&
+      Number.isInteger(value[0]) && Number.isInteger(value[1]);
+  }
+  function applyLiveState() {
+    if (!liveShell) return;
+    let state;
+    try { state = JSON.parse(__nativeReadShellState()); }
+    catch (error) {
+      __webgpuSurfaceStage(`WorldOS state read failed: ${String(error)}`);
+      return;
+    }
+    if (state.rev === seenRevision) return;
+    const layout = state.layout || {};
+    const props = Array.isArray(state.props) ? state.props : [];
+    const positions = new Map();
+    const addPosition = (name, cell) => {
+      const cells = positions.get(name) || [];
+      if (!cells.some(existing => existing[0] === cell[0] && existing[1] === cell[1])) {
+        cells.push(cell);
+        positions.set(name, cells);
+      }
+    };
+    for (const item of homeIcons) {
+      const cell = layout[layoutKey[item.name]];
+      if (isCell(cell)) addPosition(item.name, cell);
+    }
+    for (const prop of props) {
+      if (prop?.kind !== 'spaos' || typeof prop.app !== 'string') continue;
+      const app = prop.app.split('.').pop().toLowerCase();
+      if (iconByName.has(app) && Number.isInteger(prop.tx) && Number.isInteger(prop.tz)) {
+        addPosition(app, [prop.tx, prop.tz]);
+      }
+    }
+    for (const { name } of homeIcons) {
+      const cells = positions.get(name) || [];
+      const { icon, offset } = iconByName.get(name);
+      const tile = tileByName.get(name);
+      const extras = extraByName.get(name) || [];
+      for (let index = extras.length + 1; index < cells.length; ++index) {
+        const extra = { icon: icon.clone(true), tile: new THREE.Mesh(tileGeometry, tileMaterial) };
+        scene.add(extra.icon, extra.tile);
+        extras.push(extra);
+      }
+      extraByName.set(name, extras);
+      for (let index = 0; index <= extras.length; ++index) {
+        const target = index === 0 ? { icon, tile } : extras[index - 1];
+        const cell = cells[index];
+        target.icon.visible = target.tile.visible = !!cell;
+        if (cell) {
+          target.tile.position.set(cell[0], 0, cell[1]);
+          target.icon.position.set(cell[0] + offset.x, offset.y, cell[1] + offset.z);
+        }
+      }
+    }
+    const jarCell = isCell(layout.jar) ? layout.jar :
+      (props.find(p => p?.kind === 'jar' && Number.isInteger(p.tx) &&
+        Number.isInteger(p.tz)) || null);
+    const jarX = Array.isArray(jarCell) ? jarCell[0] : jarCell?.tx;
+    const jarZ = Array.isArray(jarCell) ? jarCell[1] : jarCell?.tz;
+    jar.visible = tileByName.get('jar').visible = Number.isInteger(jarX) && Number.isInteger(jarZ);
+    if (jar.visible) {
+      jar.position.set(jarX, core.TILE.H + .16, jarZ);
+      tileByName.get('jar').position.set(jarX, 0, jarZ);
+    }
+    const allCells = [...positions.values()].flat();
+    if (jar.visible) allCells.push([jarX, jarZ]);
+    if (allCells.length) {
+      center.set(allCells.reduce((sum, cell) => sum + cell[0], 0) / allCells.length,
+        0, allCells.reduce((sum, cell) => sum + cell[1], 0) / allCells.length);
+      camera.position.copy(center).add(new THREE.Vector3(5.3, 7.2, 8.1));
+      camera.lookAt(center);
+      uniforms.uCamPos.value.copy(camera.position);
+    }
+    seenRevision = state.rev;
+    __webgpuSurfaceStage(`WorldOS live state rev ${state.rev}: ${allCells.length - Number(jar.visible)} app props, jar ${jar.visible}`);
+  }
+
   const raycaster = new THREE.Raycaster();
   const pointerNdc = new THREE.Vector2();
   const hit = new THREE.Vector3();
@@ -177,6 +270,7 @@ async function render() {
 
   async function draw() {
     if (stopped) return;
+    if (frame % 60 === 0) applyLiveState();
     uniforms.uWave.value.set(waveX, waveZ,
       ((frame - waveStart) * .018 * 1.4) % 9.7, .46);
     uniforms.uWaveK.value.set(.42, .1, 1.25, 0);

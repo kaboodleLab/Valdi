@@ -233,6 +233,11 @@ the Files box. It also uses the production jar profile with a temporary Three
 glass material. A full GPU frame was visually inspected. The home positions
 are a snapshot of WorldOS defaults; its live shell controller, HUD and app
 surfaces are not in this host.
+The optional `WORLD_OS_NATIVE_STATE` mode now reads the active WorldOS volume
+and updates jar and app positions when its revision changes. On the Linux host
+it rendered the active jar and browser arrangement; a fixture changed layout
+during a 360-frame run and the same native process applied the new revision.
+The compositor's window surfaces and app actions remain outside this host.
 
 For a native Linux desktop version, the SDL3 window, Dawn Wayland surface and
 Hermes JSI WebGPU binding now form a working Three presentation path.
@@ -250,8 +255,9 @@ multiple meshes/materials, lights, scene render targets and GLSL/TSL shaders.
 
 Priority for the reusable runtime:
 
-1. Connect the live WorldOS layout, jar, HUD, app state and input paths to the
-   native Three canvas; the current home is a rendered scene snapshot.
+1. Connect the compositor's live space and window surfaces, HUD, app actions
+   and complete input paths to the native Three canvas. The volume layout and
+   SPAOS app presence are read-only inputs today.
 2. Connect the Dawn surface to Valdi's Linux view tree and lifecycle, then
    supply a real JS scheduler/CallInvoker for asynchronous GPU events.
 3. Expand browser API compatibility and image/video decoding for production

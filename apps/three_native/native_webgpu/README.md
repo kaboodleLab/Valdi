@@ -105,11 +105,30 @@ closes the window. `THREE_NATIVE_LINUX_CAPTURE=/tmp/world-home.ppm` captures the
 first swapchain frame by GPU readback for visual inspection. The width is fixed
 at 720 pixels in this probe.
 
+To follow an active SPAOS WorldOS volume, set `WORLD_OS_NATIVE_STATE` to its
+`WorldOS/State/world.json` path. The native host reads that file without writing
+to it. The scene polls its `rev`, places the jar from `layout.jar`, places
+authored app props from the layout, and recognizes SPAOS app rows in `props`.
+It updates the visible scene when the volume revision changes. On the demo
+host, the active clean volume had jar `[1,0]` and a browser prop `[2,0]`;
+the native window rendered those positions. An isolated 360-frame fixture run
+observed a revision change from 1 to 2 and added a browser tile during the
+same process. A full GPU frame from the active volume was inspected.
+
+```sh
+WORLD_OS_NATIVE_ASSETS=/tmp/valdi-world-hermes-assets \
+WORLD_OS_NATIVE_STATE=/path/to/WorldOS/State/world.json \
+XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland \
+  bazel-bin/apps/three_native/three_native_linux_webgpu_surface_probe \
+  --interactive /tmp/valdi-three-world-home-bundle.js
+```
+
 On the Intel Wayland host, the 120-frame run passed and a full GPU frame showed
 the WorldOS grid, tiles, seven GLB props and jar geometry. A transient user
 service named `valdi-world-home-hermes-v2` was left running for the GNOME demo.
 
-This is an isolated native scene host. Integrating its canvas with Valdi's
-view tree, the live WorldOS layout and app state, production jar shader and
-contents, HUD and app surfaces remains separate work. Pointer hover and click
-are wired for this scene, but the icons do not launch apps yet.
+This is an isolated native scene host. Its volume reader covers layout and
+basic app presence, but the SPAOS compositor remains the authority for spaces,
+window previews and app input. The icons do not launch apps. Integrating the
+canvas with Valdi's view tree, the production jar shader and contents, HUD,
+window surfaces and app actions remains separate work.
