@@ -82,24 +82,26 @@ The same preparation step decodes WorldOS's Back and launcher artwork and
 rasterizes the bundled SF Pro Display font into a small glyph atlas for the
 native shell controls. No browser canvas is used at runtime.
 
-With Three r186, esbuild and sharp available in a Node package directory:
+With Three r186, esbuild and sharp available in a Node package directory,
+prepare a runtime directory outside the checkout. The script refuses to
+overwrite an existing directory and publishes `assets/` and `world.js` only
+after both have built successfully. Set `ESBUILD_BIN` if esbuild is not in the
+Node directory's `.bin/` folder. `WORLD_SCENE_ROOT` must be a SPAOS checkout
+containing `kernel/engine/native-grid-scene.js`; the Linux demo uses SPAOS
+`codex/world-native-scene-contract` at `52f5fa66`. That scene factory is not
+yet in SPAOS main.
 
 ```sh
 WORLD_OS_ROOT=/path/to/world_os
 WORLD_SCENE_ROOT=/path/to/spaos/desktop/world_os
 THREE_NODE_MODULES=/path/to/node_modules
-NODE_PATH="$THREE_NODE_MODULES" node \
-  apps/three_native/native_webgpu/prepare_world_icons.cjs \
-  "$WORLD_OS_ROOT" /tmp/valdi-world-hermes-assets
-NODE_PATH="$THREE_NODE_MODULES" /path/to/esbuild \
-  apps/three_native/native_webgpu/three_world_home.js \
-  --bundle --format=iife --platform=browser --target=es2016 \
-  --alias:@worldos/native-grid-scene="$WORLD_SCENE_ROOT/kernel/engine/native-grid-scene.js" \
-  --outfile=/tmp/valdi-three-world-home-bundle.js
-WORLD_OS_NATIVE_ASSETS=/tmp/valdi-world-hermes-assets \
+WORLD_RUNTIME=/path/to/native-world-runtime
+apps/three_native/native_webgpu/build_world_runtime.sh \
+  "$WORLD_OS_ROOT" "$WORLD_SCENE_ROOT" "$THREE_NODE_MODULES" "$WORLD_RUNTIME"
+WORLD_OS_NATIVE_ASSETS="$WORLD_RUNTIME/assets" \
 XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland \
   bazel-bin/apps/three_native/three_native_linux_webgpu_surface_probe \
-  --frames=120 /tmp/valdi-three-world-home-bundle.js
+  --frames=120 "$WORLD_RUNTIME/world.js"
 ```
 
 Use `--interactive` in place of `--frames=120` to keep the window open. Mouse
@@ -127,10 +129,10 @@ window pictures, the scene shows the first available window on each space's
 tile and updates its texture by preview generation. The native host restricts
 reads to numeric `<space>.<window>.rgba` names and verifies the byte count
 against the compositor's dimensions. A synthetic browser picture was rendered
-through Hermes, Three and Dawn on the Linux host and visually inspected; the
-existing desktop's live SPAOS picture feed has not been connected to this demo.
-SPAOS can produce
-metadata snapshots when started with `SPAOS_NATIVE_FLOOR_OUT`; see its
+through Hermes, Three and Dawn on the Linux host and visually inspected.
+The SPAOS World client now reads the live floor and preview feed through its
+private World channel. SPAOS produces metadata snapshots when started with
+`SPAOS_NATIVE_FLOOR_OUT`; see its
 `desktop/docs/native-world-renderer.md`.
 
 To start this renderer as SPAOS's **World client**, use `run_spaos_world.sh` as
@@ -166,22 +168,22 @@ synthetic app data and was visually checked. The native scene also passed a
 synthetic preview tile, enter, Back, updated preview, and window-release run.
 
 ```sh
-WORLD_OS_NATIVE_ASSETS=/tmp/valdi-world-hermes-assets \
+WORLD_OS_NATIVE_ASSETS=/path/to/native-world-runtime/assets \
 WORLD_OS_NATIVE_STATE=/path/to/WorldOS/State/world.json \
 WORLD_OS_NATIVE_FLOOR=/path/to/floor.json \
 WORLD_OS_NATIVE_PREVIEWS=/path/to/preview-directory \
 XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland \
   bazel-bin/apps/three_native/three_native_linux_webgpu_surface_probe \
-  --interactive /tmp/valdi-three-world-home-bundle.js
+  --interactive /path/to/native-world-runtime/world.js
 ```
 
-On the Intel Wayland host, the 120-frame run passed and a full GPU frame showed
-the WorldOS grid, tiles, seven GLB props and jar geometry. The current GNOME
-demo runs as `valdi-native-world-shell-v7.service`: a separate SPAOS compositor
-window with this renderer as its World client. It mapped at 1920×1200, received
-35 visible app entries, and continued presenting frames. The existing SPAOS
-desktop session stayed running. This demo was validated through on-host logs;
-its real shell pixels were not exported for inspection.
+On the Linux demo host, tty2 runs SPAOS with this renderer as its fullscreen
+World client. Its clean WorldOS volume, app catalog, live window previews,
+Back, and launcher are visible; SPAOS still owns compositing and app windows.
+An isolated headless SPAOS session validated a freshly built bundle through
+tile entry, Back, an updated preview, and release of the departing window.
+The live tty2 session remains running while new bundles are checked in isolated
+sessions.
 
 This is still a focused native WorldOS shell slice hosted by ValdiLinux's
 Hermes runtime, rather than a Valdi custom view or a full port of `World.html`.

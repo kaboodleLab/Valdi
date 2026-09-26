@@ -181,6 +181,8 @@ async function render() {
   let appAtCell = new Map();
   let occupiedCells = new Set();
   let activeSpace = null;
+  // A click can enter a space before the next floor snapshot reaches us.
+  let requestedSpace = null;
   let previewGenerationBySpace = new Map();
   let returningSpace = null;
   let seenRevision = null;
@@ -385,6 +387,7 @@ async function render() {
     for (const [id, tile] of floorTileBySpace) {
       if (!currentSpaces.has(id)) tile.visible = false;
     }
+    if (activeSpace !== null && activeSpace === requestedSpace) requestedSpace = null;
     for (const { name } of homeIcons) {
       const cells = positions.get(name) || [];
       for (const cell of cells) nextAppAtCell.set(`${cell[0]},${cell[1]}`, name);
@@ -456,11 +459,13 @@ async function render() {
   globalThis.__worldBack = () => {
     if (hud.isOpen()) { hud.close(); return; }
     if (typeof __nativeWorldLeave === 'function' && __nativeWorldLeave()) {
-      if (activeSpace !== null) returningSpace = {
-        id: activeSpace,
-        generation: Math.max(previewGenerationBySpace.get(activeSpace) || 0,
-          cardBySpace.get(activeSpace)?.generation || 0),
+      const leavingSpace = activeSpace ?? requestedSpace;
+      if (leavingSpace !== null) returningSpace = {
+        id: leavingSpace,
+        generation: Math.max(previewGenerationBySpace.get(leavingSpace) || 0,
+          cardBySpace.get(leavingSpace)?.generation || 0),
       };
+      requestedSpace = null;
       __webgpuSurfaceStage('WorldOS asked SPAOS to leave the current space');
     }
   };
@@ -493,8 +498,10 @@ async function render() {
         waveX = cx; waveZ = cz; waveStart = frame;
         const cellKey = `${cx},${cz}`;
         if (spaceAtCell.has(cellKey) && typeof __nativeWorldEnter === 'function') {
-          if (__nativeWorldEnter(cx, cz))
+          if (__nativeWorldEnter(cx, cz)) {
+            requestedSpace = spaceAtCell.get(cellKey);
             __webgpuSurfaceStage(`WorldOS asked SPAOS to enter (${cx},${cz})`);
+          }
         } else {
           const app = appAtCell.get(cellKey);
           if (app && nativeApps.has(app) && typeof __nativeWorldOpen === 'function') {
