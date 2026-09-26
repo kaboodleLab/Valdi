@@ -78,6 +78,9 @@ the WorldOS Files stack's `assets/media/town/Box.glb` for Files. It also uses
 the production jar's lathe profile with a Three physical glass stand-in.
 Embedded images are decoded ahead of time into RGBA files because Hermes has no browser
 image decoder. `GLTFLoader` still parses geometry, materials and transforms.
+The same preparation step decodes WorldOS's Back and launcher artwork and
+rasterizes the bundled SF Pro Display font into a small glyph atlas for the
+native shell controls. No browser canvas is used at runtime.
 
 With Three r186, esbuild and sharp available in a Node package directory:
 
@@ -144,13 +147,21 @@ spaos-compositor --new-window \
   --world-command /path/to/Valdi/apps/three_native/native_webgpu/run_spaos_world.sh
 ```
 
-The native World scene now reads SPAOS's app catalog, enters an occupied tile on
-click, and sends Leave on Escape. After leaving, it waits for the newer preview
-before releasing SPAOS's departing window. These actions use the inherited
-private World socket; standalone windows without that socket remain visual
-probes. The standalone native host is not yet a Valdi custom view, and this
-scene includes the WorldOS grid, home assets, jar and app previews rather than
-the whole WorldOS HUD and application set.
+The native World scene reads SPAOS's app catalog and draws a camera-fixed
+clock, Back button and app launcher over the Three scene. Back and launcher
+use WorldOS's authored control artwork. The launcher pages through visible
+catalog entries and asks SPAOS to open a selected app on a free tile. Clicking
+an occupied floor tile enters its space. Escape or Back leaves the active
+space; after leaving, the renderer waits for a newer preview before releasing
+SPAOS's departing window. These actions use the inherited private World
+socket. A standalone window without that socket remains a visual probe.
+
+On the Linux host, an isolated SPAOS session delivered its actual 35-entry app
+catalog to Hermes and opened the native launcher. A second isolated session
+used a synthetic three-app catalog; clicking its launcher entry reached
+SPAOS's World `open` handler at the chosen tile. Its screenshot contains only
+synthetic app data and was visually checked. The native scene also passed a
+synthetic preview tile, enter, Back, updated preview, and window-release run.
 
 ```sh
 WORLD_OS_NATIVE_ASSETS=/tmp/valdi-world-hermes-assets \
@@ -163,11 +174,17 @@ XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland
 ```
 
 On the Intel Wayland host, the 120-frame run passed and a full GPU frame showed
-the WorldOS grid, tiles, seven GLB props and jar geometry. A transient user
-service named `valdi-world-home-hermes-v2` was left running for the GNOME demo.
+the WorldOS grid, tiles, seven GLB props and jar geometry. The current GNOME
+demo runs as `valdi-native-world-shell-v6.service`: a separate SPAOS compositor
+window with this renderer as its World client. It mapped at 1920×1200, received
+35 visible app entries, and continued presenting frames. The existing SPAOS
+desktop session stayed running. This demo was validated through on-host logs;
+its real shell pixels were not exported for inspection.
 
-This is an isolated native scene host. Its volume reader covers layout and
-basic app presence, but the SPAOS compositor remains the authority for spaces,
-window previews and app input. The icons do not launch apps. Integrating the
-canvas with Valdi's view tree, the production jar shader and contents, HUD,
-window surfaces and app actions remains separate work.
+This is still a focused native WorldOS shell slice hosted by ValdiLinux's
+Hermes runtime, rather than a Valdi custom view or a full port of `World.html`.
+Its volume reader covers layout and app presence; SPAOS remains the authority
+for spaces, previews and app input. The native shell currently has the core
+floor, previews, Back, clock and launcher. Production jar shading, the rest of
+the WorldOS HUD, 3D launcher lattice, chat, voice, notifications, and all app
+surfaces remain separate work.

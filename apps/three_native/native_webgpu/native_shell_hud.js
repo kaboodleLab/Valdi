@@ -1,0 +1,281 @@
+// WorldOS's two authored shell controls over the native Three scene. The
+// browser World supplies its DOM chrome; Hermes has no DOM or canvas, so this
+// small camera-fixed layer draws text into RGBA textures and uses the real
+// WorldOS control artwork prepared alongside the GLBs.
+const GLYPHS = {
+  ' ': [0, 0, 0, 0, 0, 0, 0],
+  '-': [0, 0, 0, 31, 0, 0, 0],
+  '.': [0, 0, 0, 0, 0, 12, 12],
+  ':': [0, 12, 12, 0, 12, 12, 0],
+  '/': [1, 2, 4, 8, 16, 0, 0],
+  '0': [14, 17, 19, 21, 25, 17, 14],
+  '1': [4, 12, 4, 4, 4, 4, 14],
+  '2': [14, 17, 1, 2, 4, 8, 31],
+  '3': [30, 1, 1, 14, 1, 1, 30],
+  '4': [2, 6, 10, 18, 31, 2, 2],
+  '5': [31, 16, 16, 30, 1, 1, 30],
+  '6': [14, 16, 16, 30, 17, 17, 14],
+  '7': [31, 1, 2, 4, 8, 8, 8],
+  '8': [14, 17, 17, 14, 17, 17, 14],
+  '9': [14, 17, 17, 15, 1, 1, 14],
+  A: [14, 17, 17, 31, 17, 17, 17],
+  B: [30, 17, 17, 30, 17, 17, 30],
+  C: [14, 17, 16, 16, 16, 17, 14],
+  D: [28, 18, 17, 17, 17, 18, 28],
+  E: [31, 16, 16, 30, 16, 16, 31],
+  F: [31, 16, 16, 30, 16, 16, 16],
+  G: [14, 17, 16, 23, 17, 17, 15],
+  H: [17, 17, 17, 31, 17, 17, 17],
+  I: [14, 4, 4, 4, 4, 4, 14],
+  J: [7, 2, 2, 2, 18, 18, 12],
+  K: [17, 18, 20, 24, 20, 18, 17],
+  L: [16, 16, 16, 16, 16, 16, 31],
+  M: [17, 27, 21, 21, 17, 17, 17],
+  N: [17, 25, 21, 19, 17, 17, 17],
+  O: [14, 17, 17, 17, 17, 17, 14],
+  P: [30, 17, 17, 30, 16, 16, 16],
+  Q: [14, 17, 17, 17, 21, 18, 13],
+  R: [30, 17, 17, 30, 20, 18, 17],
+  S: [15, 16, 16, 14, 1, 1, 30],
+  T: [31, 4, 4, 4, 4, 4, 4],
+  U: [17, 17, 17, 17, 17, 17, 14],
+  V: [17, 17, 17, 17, 17, 10, 4],
+  W: [17, 17, 17, 21, 21, 21, 10],
+  X: [17, 17, 10, 4, 10, 17, 17],
+  Y: [17, 17, 10, 4, 4, 4, 4],
+  Z: [31, 1, 2, 4, 8, 16, 31],
+};
+
+function textTexture(THREE, text, color, font) {
+  const letters = String(text).toUpperCase().slice(0, 34);
+  const glyphs = font?.entry.glyphs;
+  const glyphWidth = character => glyphs?.[character]?.advance || 6;
+  const width = Math.max(1, font ? [...letters].reduce((sum, c) => sum + glyphWidth(c), 0) :
+    letters.length * 6 - 1);
+  const height = font ? font.entry.cellHeight : 7;
+  const pixels = new Uint8Array(width * height * 4);
+  let pen = 0;
+  for (const letter of letters) {
+    if (font) {
+      const glyph = glyphs[letter] || glyphs[' '];
+      const top = height - glyph.height - 4;
+      for (let y = 0; y < glyph.height; ++y) {
+        for (let x = 0; x < glyph.width; ++x) {
+          const source = ((glyph.y + y) * font.entry.width + glyph.x + x) * 4;
+          const target = ((top + y) * width + pen + x) * 4;
+          pixels[target] = color[0];
+          pixels[target + 1] = color[1];
+          pixels[target + 2] = color[2];
+          pixels[target + 3] = font.pixels[source + 3];
+        }
+      }
+      pen += glyph.advance;
+      continue;
+    }
+    const rows = GLYPHS[letter] || GLYPHS[' '];
+    for (let y = 0; y < 7; ++y) {
+      for (let x = 0; x < 5; ++x) {
+        if (!(rows[y] & (16 >> x))) continue;
+        const offset = (y * width + pen + x) * 4;
+        pixels[offset] = color[0];
+        pixels[offset + 1] = color[1];
+        pixels[offset + 2] = color[2];
+        pixels[offset + 3] = 255;
+      }
+    }
+    pen += 6;
+  }
+  const texture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat);
+  texture.flipY = true;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return { texture, width, height };
+}
+
+export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
+  onBack, onOpen, stage }) {
+  const root = new THREE.Group();
+  camera.add(root);
+  scene.add(camera);
+  const font = manifest.font ? { entry: manifest.font,
+    pixels: new Uint8Array(readAsset(manifest.font.file)) } : null;
+  const rows = [];
+  let apps = [];
+  let width = 720;
+  let height = 720;
+  let units = 1;
+  let open = false;
+  let page = 0;
+  let minute = -1;
+  let clock = null;
+  const pageSize = 10;
+  const panelWidth = 316;
+  const rowHeight = 31;
+  let panelHeight = 60 + rowHeight + 12;
+
+  function plane(w, h, material, order = 1000) {
+    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
+    mesh.scale.set(w * units, h * units, 1);
+    mesh.renderOrder = order;
+    mesh.userData.previousUnits = units;
+    root.add(mesh);
+    return mesh;
+  }
+  function roundPlate(size) {
+    const mesh = new THREE.Mesh(new THREE.CircleGeometry(.5, 32), solid(0xffffff, .38));
+    mesh.scale.set(size * units, size * units, 1);
+    mesh.userData.previousUnits = units;
+    mesh.renderOrder = 1000;
+    root.add(mesh);
+    return mesh;
+  }
+  function place(mesh, x, y) {
+    mesh.position.set((x - width / 2) * units, (height / 2 - y) * units, -1);
+  }
+  function material(texture, opacity = 1) {
+    return new THREE.MeshBasicMaterial({ map: texture, transparent: true,
+      opacity, depthTest: false, depthWrite: false, toneMapped: false });
+  }
+  function solid(color, opacity) {
+    return new THREE.MeshBasicMaterial({ color, transparent: true,
+      opacity, depthTest: false, depthWrite: false, toneMapped: false });
+  }
+  function artwork(name, size) {
+    const entry = manifest.controls?.[name];
+    if (!entry) return null;
+    const pixels = new Uint8Array(readAsset(entry.file));
+    const texture = new THREE.DataTexture(pixels, entry.width, entry.height, THREE.RGBAFormat);
+    texture.magFilter = THREE.LinearFilter;
+    texture.minFilter = THREE.LinearFilter;
+    texture.needsUpdate = true;
+    const mesh = plane(size, size, material(texture), 1010);
+    return mesh;
+  }
+  function label(value, x, y, size, color = [50, 49, 54], align = 'left') {
+    const { texture, width: pixels, height: pixelsHigh } = textTexture(THREE, value, color, font);
+    const pixelScale = size / pixelsHigh;
+    const labelWidth = pixels * pixelScale;
+    const mesh = plane(labelWidth, size, material(texture), 1020);
+    place(mesh, align === 'center' ? x : x + labelWidth / 2, y);
+    mesh.userData.texture = texture;
+    return mesh;
+  }
+  function removeLabel(mesh) {
+    if (!mesh) return;
+    root.remove(mesh);
+    mesh.userData.texture?.dispose();
+    mesh.material.dispose();
+    mesh.geometry.dispose();
+  }
+  const backPlate = roundPlate(42);
+  const launcherPlate = roundPlate(48);
+  const back = artwork('back', 36);
+  if (back) back.scale.x = -back.scale.x;
+  const launcher = artwork('launcher', 38);
+  const panel = plane(panelWidth, panelHeight, solid(0xf8f5f2, .94), 1001);
+  const header = label('APPS', 0, 0, 15);
+  let pageMark = label('1/1', 0, 0, 11);
+  panel.visible = header.visible = pageMark.visible = false;
+
+  function redrawRows() {
+    while (rows.length) removeLabel(rows.pop());
+    panelHeight = 60 + Math.max(1, Math.min(pageSize, apps.length)) * rowHeight +
+      (apps.length > pageSize ? 34 : 12);
+    panel.scale.y = panelHeight * units;
+    const count = Math.max(1, Math.ceil(apps.length / pageSize));
+    page = Math.max(0, Math.min(page, count - 1));
+    removeLabel(pageMark);
+    pageMark = label(`${page + 1}/${count}`, 0, 0, 11);
+    pageMark.visible = open && apps.length > pageSize;
+    const x = width - 22 - panelWidth;
+    const top = height - 22 - 48 - 12 - panelHeight;
+    place(panel, x + panelWidth / 2, top + panelHeight / 2);
+    place(header, x + 22 + header.scale.x / units / 2, top + 29);
+    place(pageMark, x + panelWidth - 50, top + panelHeight - 17);
+    for (let index = 0; index < pageSize; ++index) {
+      const app = apps[page * pageSize + index];
+      if (!app) break;
+      const name = typeof app.name === 'string' && app.name ? app.name : app.key;
+      const item = label(name.slice(0, 28), x + 23,
+        top + 62 + index * rowHeight, 15);
+      item.visible = open;
+      rows.push(item);
+    }
+  }
+  function resize(nextWidth, nextHeight, extent) {
+    width = nextWidth;
+    height = nextHeight;
+    units = 2 * extent / height;
+    for (const mesh of root.children) {
+      mesh.scale.x /= mesh.userData.previousUnits || 1;
+      mesh.scale.y /= mesh.userData.previousUnits || 1;
+      mesh.scale.x *= units;
+      mesh.scale.y *= units;
+      mesh.userData.previousUnits = units;
+    }
+    place(backPlate, 41, 39);
+    place(launcherPlate, width - 46, height - 46);
+    if (back) place(back, 41, 39);
+    if (launcher) place(launcher, width - 46, height - 46);
+    if (clock) place(clock, width / 2, 37);
+    redrawRows();
+  }
+  function setApps(next) {
+    apps = next.filter(app => typeof app.key === 'string' && !app.hidden)
+      .sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key));
+    redrawRows();
+  }
+  function tick() {
+    const now = new Date();
+    const stamp = now.getHours() * 60 + now.getMinutes();
+    if (stamp === minute) return;
+    minute = stamp;
+    removeLabel(clock);
+    const hours = now.getHours() % 12 || 12;
+    const value = `${hours}:${String(now.getMinutes()).padStart(2, '0')} ${now.getHours() < 12 ? 'AM' : 'PM'}`;
+    clock = label(value, width / 2, 37, 17, [48, 46, 44], 'center');
+  }
+  function show(next) {
+    open = next;
+    panel.visible = header.visible = open;
+    pageMark.visible = open && apps.length > pageSize;
+    for (const row of rows) row.visible = open;
+    stage(open ? `WorldOS native launcher opened: ${apps.length} apps` :
+      'WorldOS native launcher closed');
+  }
+  function pointer(x, y, clicked) {
+    if (!clicked) return false;
+    if (x >= 18 && x <= 64 && y >= 16 && y <= 64) {
+      if (open) show(false);
+      else onBack();
+      return true;
+    }
+    if (x >= width - 72 && x <= width - 18 && y >= height - 72 && y <= height - 18) {
+      show(!open);
+      return true;
+    }
+    if (!open) return false;
+    const left = width - 22 - panelWidth;
+    const top = height - 22 - 48 - 12 - panelHeight;
+    if (x < left || x > left + panelWidth || y < top || y > top + panelHeight) {
+      show(false);
+      return true;
+    }
+    const row = Math.floor((y - top - 46) / rowHeight);
+    if (row >= 0 && row < pageSize) {
+      const app = apps[page * pageSize + row];
+      if (app) {
+        onOpen(app.key);
+        show(false);
+      }
+    } else if (y >= top + panelHeight - 35 && apps.length > pageSize) {
+      page = (page + 1) % Math.ceil(apps.length / pageSize);
+      redrawRows();
+    }
+    return true;
+  }
+  resize(width, height, 5.8);
+  tick();
+  return { resize, setApps, tick, pointer, close: () => show(false), isOpen: () => open };
+}

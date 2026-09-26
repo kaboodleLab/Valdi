@@ -528,9 +528,19 @@ int main(int argc, char** argv) {
             }
             if (interactive && (event.type == SDL_EVENT_MOUSE_MOTION ||
                                 event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)) {
-                const double x = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.x : event.button.x;
-                const double y = event.type == SDL_EVENT_MOUSE_MOTION ? event.motion.y : event.button.y;
-                const bool clicked = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+                int windowWidth = 0, windowHeight = 0, pixelWidth = 0, pixelHeight = 0;
+                SDL_GetWindowSize(window, &windowWidth, &windowHeight);
+                SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight);
+                if (windowWidth < 1 || windowHeight < 1 || pixelWidth < 1 || pixelHeight < 1)
+                    continue;
+                const double logicalX = event.type == SDL_EVENT_MOUSE_MOTION ?
+                    event.motion.x : event.button.x;
+                const double logicalY = event.type == SDL_EVENT_MOUSE_MOTION ?
+                    event.motion.y : event.button.y;
+                const double x = logicalX * pixelWidth / windowWidth;
+                const double y = logicalY * pixelHeight / windowHeight;
+                const bool clicked = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                                     event.button.button == SDL_BUTTON_LEFT;
                 runtime->dispatchSynchronouslyOnJsThread(STRING_LITERAL("world_home_pointer"),
                     [&](Valdi::JavaScriptEntryParameters& entry) {
                         auto* js = entry.jsContext.getJsiRuntime();

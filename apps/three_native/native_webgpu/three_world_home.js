@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import * as tsl from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
+import { createNativeShellHud } from './native_shell_hud.js';
 
 function nativeIconLoader(name, manifest) {
   const loader = new GLTFLoader();
@@ -178,12 +179,38 @@ async function render() {
   const nativeApps = new Map();
   let spaceAtCell = new Map();
   let appAtCell = new Map();
+  let occupiedCells = new Set();
   let activeSpace = null;
   let previewGenerationBySpace = new Map();
   let returningSpace = null;
   let seenRevision = null;
   let seenFloorRevision = null;
+  let seenCatalogSignature = null;
   let pendingPreview = false;
+  const hud = createNativeShellHud({ THREE, scene, camera, manifest,
+    readAsset: name => __nativeReadAsset(name),
+    stage: message => __webgpuSurfaceStage(message),
+    onBack: () => globalThis.__worldBack(),
+    onOpen: key => {
+      if (typeof __nativeWorldOpen !== 'function' || !nativeApps.has(key)) return;
+      const baseX = Math.round(center.x) + 2;
+      const baseZ = Math.round(center.z);
+      for (let radius = 0; radius < 10; ++radius) {
+        for (let dz = -radius; dz <= radius; ++dz) {
+          for (let dx = -radius; dx <= radius; ++dx) {
+            if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
+            const x = baseX + dx;
+            const z = baseZ + dz;
+            if (occupiedCells.has(`${x},${z}`)) continue;
+            if (__nativeWorldOpen(key, x, z))
+              __webgpuSurfaceStage(`WorldOS launcher asked SPAOS to open ${key} at (${x},${z})`);
+            return;
+          }
+        }
+      }
+    },
+  });
+  hud.resize(surfaceWidth, surfaceHeight, extent);
   function isCell(value) {
     return Array.isArray(value) && value.length === 2 &&
       Number.isInteger(value[0]) && Number.isInteger(value[1]);
@@ -197,10 +224,16 @@ async function render() {
       let message;
       try { message = JSON.parse(line); } catch { continue; }
       if (message.type === 'apps' && Array.isArray(message.apps)) {
+        const signature = JSON.stringify(message.apps.map(app => [
+          app.key, app.name, app.hidden, app.world, app.icon,
+        ]));
+        if (signature === seenCatalogSignature) continue;
+        seenCatalogSignature = signature;
         nativeApps.clear();
         for (const app of message.apps) {
           if (typeof app?.key === 'string' && !app.hidden) nativeApps.set(app.key, app);
         }
+        hud.setApps([...nativeApps.values()]);
         __webgpuSurfaceStage(`WorldOS app catalog received: ${nativeApps.size} visible apps`);
       }
     }
@@ -261,6 +294,14 @@ async function render() {
     const nextSpaceAtCell = new Map();
     const nextAppAtCell = new Map();
     const nextPreviewGenerationBySpace = new Map();
+    const nextOccupiedCells = new Set();
+    for (const cell of Object.values(layout)) {
+      if (isCell(cell)) nextOccupiedCells.add(`${cell[0]},${cell[1]}`);
+    }
+    for (const prop of props) {
+      if (Number.isInteger(prop?.tx) && Number.isInteger(prop?.tz))
+        nextOccupiedCells.add(`${prop.tx},${prop.tz}`);
+    }
     activeSpace = null;
     pendingPreview = false;
     for (const space of spaces) {
@@ -270,6 +311,7 @@ async function render() {
       if (space.active) activeSpace = space.id;
       nextPreviewGenerationBySpace.set(space.id, space.preview_generation || 0);
       const cellKey = `${space.at.x},${space.at.z}`;
+      nextOccupiedCells.add(cellKey);
       nextSpaceAtCell.set(cellKey, space.id);
       const shot = Array.isArray(space.previews) ? space.previews.find(p =>
         Number.isInteger(p?.window) && p.window > 0 &&
@@ -399,6 +441,7 @@ async function render() {
     spaceAtCell = nextSpaceAtCell;
     appAtCell = nextAppAtCell;
     previewGenerationBySpace = nextPreviewGenerationBySpace;
+    occupiedCells = nextOccupiedCells;
     __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jar.visible)} app cells, jar ${jar.visible}`);
   }
 
@@ -411,6 +454,7 @@ async function render() {
   let waveX = 0, waveZ = 0, waveStart = 0;
   globalThis.__nativeStop = () => { stopped = true; };
   globalThis.__worldBack = () => {
+    if (hud.isOpen()) { hud.close(); return; }
     if (typeof __nativeWorldLeave === 'function' && __nativeWorldLeave()) {
       if (activeSpace !== null) returningSpace = {
         id: activeSpace,
@@ -434,9 +478,11 @@ async function render() {
     camera.top = extent;
     camera.bottom = -extent;
     camera.updateProjectionMatrix();
+    hud.resize(width, height, extent);
     __webgpuSurfaceStage(`WorldOS surface resized: ${width}x${height}`);
   };
   globalThis.__worldPointer = (x, y, clicked) => {
+    if (hud.pointer(x, y, clicked) || hud.isOpen()) return;
     pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
     raycaster.setFromCamera(pointerNdc, camera);
     if (raycaster.ray.intersectPlane(floor, hit)) {
@@ -464,6 +510,7 @@ async function render() {
     if (stopped) return;
     pollWorldChannel();
     if (frame % 60 === 0) applyLiveState();
+    if (frame % 60 === 0) hud.tick();
     uniforms.uWave.value.set(waveX, waveZ,
       ((frame - waveStart) * .018 * 1.4) % 9.7, .46);
     uniforms.uWaveK.value.set(.42, .1, 1.25, 0);
