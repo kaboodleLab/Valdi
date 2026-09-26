@@ -102,8 +102,9 @@ XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland
 Use `--interactive` in place of `--frames=120` to keep the window open. Mouse
 motion updates the grid hover cell and clicking starts its lattice wave; Escape
 closes the window. `THREE_NATIVE_LINUX_CAPTURE=/tmp/world-home.ppm` captures the
-first swapchain frame by GPU readback for visual inspection. The width is fixed
-at 720 pixels in this probe.
+first swapchain frame by GPU readback for visual inspection. The host follows
+Wayland pixel-size changes, including SPAOS fullscreen, and updates the Three
+camera and WebGPU drawing buffer.
 
 To follow an active SPAOS WorldOS volume, set `WORLD_OS_NATIVE_STATE` to its
 `WorldOS/State/world.json` path. The native host reads that file without writing
@@ -122,9 +123,34 @@ tile and updates its texture by preview generation. The native host restricts
 reads to numeric `<space>.<window>.rgba` names and verifies the byte count
 against the compositor's dimensions. A synthetic browser picture was rendered
 through Hermes, Three and Dawn on the Linux host and visually inspected; the
-live SPAOS picture feed has not been connected to this demo. SPAOS can produce
+existing desktop's live SPAOS picture feed has not been connected to this demo.
+SPAOS can produce
 metadata snapshots when started with `SPAOS_NATIVE_FLOOR_OUT`; see its
 `desktop/docs/native-world-renderer.md`.
+
+To start this renderer as SPAOS's **World client**, use `run_spaos_world.sh` as
+the compositor's `--world-command`. It keeps SPAOS's inherited private World
+channel and Wayland socket, supplies the metadata and preview paths, and ignores
+the Electron flags that SPAOS appends to World commands. Example for an isolated
+nested session (use absolute paths):
+
+```sh
+export WORLD_OS_NATIVE_ASSETS=/path/to/prepared-assets
+export WORLD_OS_NATIVE_STATE=/path/to/WorldOS/State/world.json
+export VALDI_WORLD_BUNDLE=/path/to/valdi-three-world-home-bundle.js
+export SPAOS_WORLD_OS_X11=0
+export SPAOS_NATIVE_FLOOR_OUT="$XDG_RUNTIME_DIR/native-world-floor.json"
+spaos-compositor --new-window \
+  --world-command /path/to/Valdi/apps/three_native/native_webgpu/run_spaos_world.sh
+```
+
+The native World scene now reads SPAOS's app catalog, enters an occupied tile on
+click, and sends Leave on Escape. After leaving, it waits for the newer preview
+before releasing SPAOS's departing window. These actions use the inherited
+private World socket; standalone windows without that socket remain visual
+probes. The standalone native host is not yet a Valdi custom view, and this
+scene includes the WorldOS grid, home assets, jar and app previews rather than
+the whole WorldOS HUD and application set.
 
 ```sh
 WORLD_OS_NATIVE_ASSETS=/tmp/valdi-world-hermes-assets \

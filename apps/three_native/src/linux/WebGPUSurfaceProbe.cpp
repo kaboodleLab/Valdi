@@ -10,6 +10,7 @@
 #include <webgpu/webgpu.h>
 
 #include <algorithm>
+#include <cerrno>
 #include <chrono>
 #include <cctype>
 #include <cmath>
@@ -17,12 +18,17 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <fcntl.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 namespace {
 
@@ -58,6 +64,99 @@ public:
 private:
     std::vector<uint8_t> bytes_;
 };
+
+// SPAOS gives its World client one end of a private socket pair. Keep it
+// nonblocking: the renderer's JS thread must never wait for compositor IPC.
+class WorldChannel final {
+public:
+    explicit WorldChannel(int fd) : fd_(fd) {}
+    ~WorldChannel() { if (fd_ >= 0) close(fd_); }
+
+    WorldChannel(const WorldChannel&) = delete;
+    WorldChannel& operator=(const WorldChannel&) = delete;
+
+    bool sendLine(const std::string& line) {
+        if (fd_ < 0 || line.size() > 4096 || outbound_.size() + line.size() + 1 > 16384)
+            return false;
+        outbound_ += line;
+        outbound_ += '\n';
+        flush();
+        return fd_ >= 0;
+    }
+
+    std::string poll() {
+        flush();
+        if (fd_ < 0) return {};
+        char bytes[16384];
+        for (int reads = 0; reads < 64; ++reads) {
+            const ssize_t count = recv(fd_, bytes, sizeof(bytes), MSG_DONTWAIT);
+            if (count > 0) {
+                inbound_.append(bytes, static_cast<size_t>(count));
+                if (inbound_.size() > 1024 * 1024) { closeChannel(); return {}; }
+            } else if (count == 0) {
+                closeChannel();
+                break;
+            } else if (errno == EINTR) {
+                continue;
+            } else if (errno == EAGAIN || errno == EWOULDBLOCK) {
+                break;
+            } else {
+                closeChannel();
+                break;
+            }
+        }
+        const size_t end = inbound_.rfind('\n');
+        if (end == std::string::npos) return {};
+        std::string complete = inbound_.substr(0, end + 1);
+        inbound_.erase(0, end + 1);
+        return complete;
+    }
+
+private:
+    void closeChannel() {
+        if (fd_ >= 0) close(fd_);
+        fd_ = -1;
+        inbound_.clear();
+        outbound_.clear();
+    }
+    void flush() {
+        while (fd_ >= 0 && !outbound_.empty()) {
+            const ssize_t count = send(fd_, outbound_.data(), outbound_.size(),
+                                       MSG_DONTWAIT | MSG_NOSIGNAL);
+            if (count > 0) outbound_.erase(0, static_cast<size_t>(count));
+            else if (count < 0 && errno == EINTR) continue;
+            else if (count < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) break;
+            else { closeChannel(); break; }
+        }
+    }
+    int fd_;
+    std::string inbound_;
+    std::string outbound_;
+};
+
+std::shared_ptr<WorldChannel> worldChannelFromEnvironment() {
+    const char* raw = std::getenv("SPAOS_APP_CHANNEL_FD");
+    if (!raw || !*raw) return {};
+    char* end = nullptr;
+    errno = 0;
+    const long parsed = std::strtol(raw, &end, 10);
+    if (errno || *end || parsed < 3 || parsed > std::numeric_limits<int>::max()) return {};
+    const int fd = static_cast<int>(parsed);
+    if (fcntl(fd, F_GETFD) < 0) return {};
+    const int flags = fcntl(fd, F_GETFL);
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) return {};
+    auto channel = std::make_shared<WorldChannel>(fd);
+    channel->sendLine("{\"type\":\"hello\",\"protocol\":1}");
+    return channel;
+}
+
+int worldCoordinate(facebook::jsi::Runtime& js, const facebook::jsi::Value& value) {
+    if (!value.isNumber()) throw facebook::jsi::JSError(js, "Expected a WorldOS tile coordinate");
+    const double number = value.getNumber();
+    if (!std::isfinite(number) || number < -10000 || number > 10000 || std::floor(number) != number)
+        throw facebook::jsi::JSError(js, "Invalid WorldOS tile coordinate");
+    return static_cast<int>(number);
+}
 
 std::string assetPath(facebook::jsi::Runtime& js,
                       const facebook::jsi::Value* args, size_t count,
@@ -116,7 +215,8 @@ int main(int argc, char** argv) {
         : std::getenv("WORLD_OS_NATIVE_STATE")
         ? "WorldOS live layout - Valdi Three/Dawn"
         : "WorldOS home scene - Valdi Three/Dawn";
-    SDL_Window* window = SDL_CreateWindow(title, kWidth, kHeight, SDL_WINDOW_VULKAN);
+    SDL_Window* window = SDL_CreateWindow(title, kWidth, kHeight,
+                                          SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
     if (window == nullptr) {
         std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         SDL_Quit();
@@ -136,6 +236,7 @@ int main(int argc, char** argv) {
     standalone->setupJsRuntime({});
     auto* runtime = standalone->getRuntime().getJavaScriptRuntime();
     auto result = std::make_shared<ProbeResult>();
+    auto worldChannel = script.empty() ? std::shared_ptr<WorldChannel>() : worldChannelFromEnvironment();
     std::unique_ptr<rnwgpu::RNWebGPUManager> webgpu;
     bool installed = false;
 
@@ -172,6 +273,68 @@ int main(int argc, char** argv) {
         jsi->global().setProperty(*jsi, "__webgpuSurfaceDone", std::move(done));
         if (!script.empty()) {
             jsi->global().setProperty(*jsi, "__nativeFrameLimit", frameLimit);
+            if (worldChannel) {
+                auto pollWorld = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldPoll"), 0,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        return facebook::jsi::String::createFromUtf8(js, worldChannel->poll());
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldPoll", std::move(pollWorld));
+                auto enterWorld = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldEnter"), 2,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 2) throw facebook::jsi::JSError(js, "Expected WorldOS tile");
+                        const int x = worldCoordinate(js, args[0]);
+                        const int z = worldCoordinate(js, args[1]);
+                        return facebook::jsi::Value(worldChannel->sendLine(
+                            "{\"type\":\"enter\",\"at\":{\"x\":" + std::to_string(x) +
+                            ",\"z\":" + std::to_string(z) + "}}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldEnter", std::move(enterWorld));
+                auto leaveWorld = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldLeave"), 0,
+                    [worldChannel](facebook::jsi::Runtime&, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        return facebook::jsi::Value(worldChannel->sendLine("{\"type\":\"leave\"}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldLeave", std::move(leaveWorld));
+                auto releaseWorld = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldRelease"), 1,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 1 || !args[0].isNumber())
+                            throw facebook::jsi::JSError(js, "Expected WorldOS space id");
+                        const double space = args[0].getNumber();
+                        if (!std::isfinite(space) || space < 1 || space > 1000000 ||
+                            std::floor(space) != space)
+                            throw facebook::jsi::JSError(js, "Invalid WorldOS space id");
+                        return facebook::jsi::Value(worldChannel->sendLine(
+                            "{\"type\":\"release_windows\",\"space\":" +
+                            std::to_string(static_cast<int>(space)) + "}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldRelease", std::move(releaseWorld));
+                auto openWorld = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldOpen"), 3,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 3 || !args[0].isString())
+                            throw facebook::jsi::JSError(js, "Expected WorldOS app key and tile");
+                        const std::string key = args[0].getString(js).utf8(js);
+                        if (key.empty() || key.size() > 128 ||
+                            !std::all_of(key.begin(), key.end(), [](unsigned char c) {
+                                return std::isalnum(c) || c == '.' || c == '_' || c == '-';
+                            })) throw facebook::jsi::JSError(js, "Invalid WorldOS app key");
+                        const int x = worldCoordinate(js, args[1]);
+                        const int z = worldCoordinate(js, args[2]);
+                        return facebook::jsi::Value(worldChannel->sendLine(
+                            "{\"type\":\"open\",\"app\":\"" + key +
+                            "\",\"at\":{\"x\":" + std::to_string(x) +
+                            ",\"z\":" + std::to_string(z) + "}}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldOpen", std::move(openWorld));
+            }
             if (const char* statePath = std::getenv("WORLD_OS_NATIVE_STATE")) {
                 const std::string path(statePath);
                 auto readState = facebook::jsi::Function::createFromHostFunction(
@@ -350,9 +513,18 @@ int main(int argc, char** argv) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
-                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE)) {
+                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && !worldChannel)) {
                 quit = true;
                 break;
+            }
+            if (worldChannel && event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE) {
+                runtime->dispatchSynchronouslyOnJsThread(STRING_LITERAL("world_home_back"),
+                    [&](Valdi::JavaScriptEntryParameters& entry) {
+                        auto* js = entry.jsContext.getJsiRuntime();
+                        auto handler = js->global().getProperty(*js, "__worldBack");
+                        if (handler.isObject())
+                            handler.asObject(*js).asFunction(*js).call(*js);
+                    });
             }
             if (interactive && (event.type == SDL_EVENT_MOUSE_MOTION ||
                                 event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)) {
@@ -366,6 +538,19 @@ int main(int argc, char** argv) {
                         if (handler.isObject())
                             handler.asObject(*js).asFunction(*js).call(*js, x, y, clicked);
                     });
+            }
+            if (!script.empty() && event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
+                int width = 0, height = 0;
+                SDL_GetWindowSizeInPixels(window, &width, &height);
+                if (width > 0 && height > 0) {
+                    runtime->dispatchSynchronouslyOnJsThread(STRING_LITERAL("world_home_resize"),
+                        [&](Valdi::JavaScriptEntryParameters& entry) {
+                            auto* js = entry.jsContext.getJsiRuntime();
+                            auto handler = js->global().getProperty(*js, "__worldResize");
+                            if (handler.isObject())
+                                handler.asObject(*js).asFunction(*js).call(*js, width, height);
+                        });
+                }
             }
         }
         if (quit) break;
