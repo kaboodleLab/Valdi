@@ -11,7 +11,11 @@ if (!sourceRoot || !outputRoot) {
   process.exit(2);
 }
 
-const names = ['weather', 'calendar', 'mail', 'notes', 'whatsapp', 'browser', 'files'];
+const homeNames = ['weather', 'calendar', 'mail', 'notes', 'whatsapp', 'browser', 'files'];
+const iconDirectory = path.join(sourceRoot, 'assets/media/appicons');
+const names = [...new Set([...homeNames,
+  ...fs.readdirSync(iconDirectory).filter(file => /^[a-z0-9_-]+\.glb$/.test(file))
+    .map(file => file.slice(0, -4))])];
 const manifest = {};
 const controls = {
   back: 'ui/app-back.png',

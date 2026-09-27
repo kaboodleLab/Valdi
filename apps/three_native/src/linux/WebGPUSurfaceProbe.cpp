@@ -49,7 +49,9 @@ public:
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) throw std::runtime_error("Cannot open native asset: " + path);
         const auto length = file.tellg();
-        if (length < 0 || length > 32 * 1024 * 1024)
+        // The authored Dinner icon GLB is about 53 MiB. Keep a bounded read
+        // while allowing the complete WorldOS icon catalog to load lazily.
+        if (length < 0 || length > 64 * 1024 * 1024)
             throw std::runtime_error("Invalid native asset size: " + path);
         bytes_.resize(static_cast<size_t>(length));
         file.seekg(0);
@@ -525,6 +527,36 @@ int main(int argc, char** argv) {
                         if (handler.isObject())
                             handler.asObject(*js).asFunction(*js).call(*js);
                     });
+            }
+            if (interactive && (event.type == SDL_EVENT_MOUSE_WHEEL ||
+                                event.type == SDL_EVENT_KEY_DOWN)) {
+                const char* navigation = nullptr;
+                double amount = 1;
+                if (event.type == SDL_EVENT_MOUSE_WHEEL && event.wheel.y != 0) {
+                    navigation = "zoom";
+                    amount = event.wheel.y;
+                } else if (event.type == SDL_EVENT_KEY_DOWN) {
+                    switch (event.key.key) {
+                        case SDLK_LEFT: navigation = "left"; break;
+                        case SDLK_RIGHT: navigation = "right"; break;
+                        case SDLK_UP: navigation = "up"; break;
+                        case SDLK_DOWN: navigation = "down"; break;
+                        case SDLK_HOME: navigation = "recenter"; break;
+                        case SDLK_RETURN:
+                        case SDLK_KP_ENTER: navigation = "enter"; break;
+                        default: break;
+                    }
+                }
+                if (navigation) {
+                    runtime->dispatchSynchronouslyOnJsThread(STRING_LITERAL("world_home_navigate"),
+                        [&](Valdi::JavaScriptEntryParameters& entry) {
+                            auto* js = entry.jsContext.getJsiRuntime();
+                            auto handler = js->global().getProperty(*js, "__worldNavigate");
+                            if (handler.isObject())
+                                handler.asObject(*js).asFunction(*js).call(*js,
+                                    facebook::jsi::String::createFromUtf8(*js, navigation), amount);
+                        });
+                }
             }
             if (interactive && (event.type == SDL_EVENT_MOUSE_MOTION ||
                                 event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)) {

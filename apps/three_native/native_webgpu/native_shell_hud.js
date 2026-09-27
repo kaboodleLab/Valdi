@@ -93,19 +93,25 @@ function textTexture(THREE, text, color, font) {
   return { texture, width, height };
 }
 
+export function createNativeText(THREE, manifest, readAsset) {
+  const font = manifest.font ? { entry: manifest.font,
+    pixels: new Uint8Array(readAsset(manifest.font.file)) } : null;
+  return (value, color) => textTexture(THREE, value, color, font);
+}
+
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
-  onBack, onOpen, stage }) {
+  onBack, onOpen, stage, makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
   camera.add(root);
   scene.add(camera);
-  const font = manifest.font ? { entry: manifest.font,
-    pixels: new Uint8Array(readAsset(manifest.font.file)) } : null;
   const rows = [];
   let apps = [];
   let width = 720;
   let height = 720;
   let units = 1;
   let open = false;
+  let selectedTile = null;
+  let selectedApp = 0;
   let page = 0;
   let minute = -1;
   let clock = null;
@@ -153,7 +159,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     return mesh;
   }
   function label(value, x, y, size, color = [50, 49, 54], align = 'left') {
-    const { texture, width: pixels, height: pixelsHigh } = textTexture(THREE, value, color, font);
+    const { texture, width: pixels, height: pixelsHigh } = makeText(value, color);
     const pixelScale = size / pixelsHigh;
     const labelWidth = pixels * pixelScale;
     const mesh = plane(labelWidth, size, material(texture), 1020);
@@ -174,12 +180,18 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   if (back) back.scale.x = -back.scale.x;
   const launcher = artwork('launcher', 38);
   const panel = plane(panelWidth, panelHeight, solid(0xf8f5f2, .94), 1001);
-  const header = label('APPS', 0, 0, 15);
+  const selectionPlate = plane(panelWidth - 24, rowHeight - 2,
+    solid(0xdde4ec, .9), 1005);
+  let header = label('APPS', 0, 0, 15);
   let pageMark = label('1/1', 0, 0, 11);
   panel.visible = header.visible = pageMark.visible = false;
 
   function redrawRows() {
     while (rows.length) removeLabel(rows.pop());
+    removeLabel(header);
+    header = label(selectedTile ? `APPS - ${selectedTile.x}/${selectedTile.z}` : 'APPS',
+      0, 0, 15);
+    header.visible = open;
     panelHeight = 60 + Math.max(1, Math.min(pageSize, apps.length)) * rowHeight +
       (apps.length > pageSize ? 34 : 12);
     panel.scale.y = panelHeight * units;
@@ -202,6 +214,11 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       item.visible = open;
       rows.push(item);
     }
+    const selectedRow = selectedApp - page * pageSize;
+    selectionPlate.visible = open && apps.length > 0 &&
+      selectedRow >= 0 && selectedRow < rows.length;
+    if (selectionPlate.visible)
+      place(selectionPlate, x + panelWidth / 2, top + 62 + selectedRow * rowHeight);
   }
   function resize(nextWidth, nextHeight, extent) {
     width = nextWidth;
@@ -224,6 +241,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   function setApps(next) {
     apps = next.filter(app => typeof app.key === 'string' && !app.hidden)
       .sort((a, b) => (a.name || a.key).localeCompare(b.name || b.key));
+    selectedApp = Math.min(selectedApp, Math.max(0, apps.length - 1));
     redrawRows();
   }
   function tick() {
@@ -238,8 +256,13 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   }
   function show(next) {
     open = next;
+    if (!open) {
+      selectedTile = null;
+      redrawRows();
+    }
     panel.visible = header.visible = open;
     pageMark.visible = open && apps.length > pageSize;
+    selectionPlate.visible = open && apps.length > 0;
     for (const row of rows) row.visible = open;
     stage(open ? `WorldOS native launcher opened: ${apps.length} apps` :
       'WorldOS native launcher closed');
@@ -252,6 +275,10 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       return true;
     }
     if (x >= width - 72 && x <= width - 18 && y >= height - 72 && y <= height - 18) {
+      if (!open) {
+        selectedTile = null;
+        redrawRows();
+      }
       show(!open);
       return true;
     }
@@ -266,16 +293,51 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     if (row >= 0 && row < pageSize) {
       const app = apps[page * pageSize + row];
       if (app) {
-        onOpen(app.key);
+        selectedApp = page * pageSize + row;
+        onOpen(app.key, selectedTile);
         show(false);
       }
     } else if (y >= top + panelHeight - 35 && apps.length > pageSize) {
       page = (page + 1) % Math.ceil(apps.length / pageSize);
+      selectedApp = page * pageSize;
       redrawRows();
     }
     return true;
   }
   resize(width, height, 5.8);
   tick();
-  return { resize, setApps, tick, pointer, close: () => show(false), isOpen: () => open };
+  function key(kind) {
+    if (!open) return false;
+    if (kind === 'enter') {
+      const app = apps[selectedApp];
+      if (app) onOpen(app.key, selectedTile);
+      show(false);
+      return true;
+    }
+    if (kind === 'up' || kind === 'down') {
+      if (apps.length) selectedApp = (selectedApp + (kind === 'down' ? 1 : -1) +
+        apps.length) % apps.length;
+      page = Math.floor(selectedApp / pageSize);
+    } else if (kind === 'left' || kind === 'right') {
+      const pageCount = Math.max(1, Math.ceil(apps.length / pageSize));
+      page = (page + (kind === 'right' ? 1 : -1) + pageCount) % pageCount;
+      selectedApp = page * pageSize;
+    } else if (kind === 'home') {
+      page = selectedApp = 0;
+    } else {
+      return false;
+    }
+    redrawRows();
+    return true;
+  }
+  return { resize, setApps, tick, pointer, key, close: () => show(false),
+    isOpen: () => open,
+    openAt(x, z) {
+      selectedTile = { x, z };
+      page = selectedApp = 0;
+      redrawRows();
+      show(true);
+      stage(`WorldOS native launcher tile: (${x},${z})`);
+    },
+  };
 }

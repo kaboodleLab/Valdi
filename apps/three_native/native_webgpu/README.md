@@ -158,10 +158,12 @@ tile and updates its texture by preview generation. The native host restricts
 reads to numeric `<space>.<window>.rgba` names and verifies the byte count
 against the compositor's dimensions. A synthetic browser picture was rendered
 through Hermes, Three and Dawn on the Linux host and visually inspected.
-The SPAOS World client now reads the live floor and preview feed through its
-private World channel. SPAOS produces metadata snapshots when started with
-`SPAOS_NATIVE_FLOOR_OUT`; see its
-`desktop/docs/native-world-renderer.md`.
+The SPAOS World client now consumes `spaces` and `apps` snapshots from its
+inherited private World channel. A new floor snapshot is applied on the next
+draw rather than waiting for the one-second state-file poll. Preview images
+remain compositor-owned files named by the authenticated floor metadata.
+`WORLD_OS_NATIVE_FLOOR` is a standalone-probe fallback; a live SPAOS session
+does not need `SPAOS_NATIVE_FLOOR_OUT`.
 
 To start this renderer as SPAOS's **World client**, use `run_spaos_world.sh` as
 the compositor's `--world-command`. It keeps SPAOS's inherited private World
@@ -174,22 +176,51 @@ export WORLD_OS_NATIVE_ASSETS=/path/to/prepared-assets
 export WORLD_OS_NATIVE_STATE=/path/to/WorldOS/State/world.json
 export VALDI_WORLD_BUNDLE=/path/to/valdi-three-world-home-bundle.js
 export SPAOS_WORLD_OS_X11=0
-export SPAOS_NATIVE_FLOOR_OUT="$XDG_RUNTIME_DIR/native-world-floor.json"
 spaos-compositor --new-window \
   --world-command /path/to/Valdi/apps/three_native/native_webgpu/run_spaos_world.sh
 ```
 
 The native World scene reads SPAOS's app catalog and draws a camera-fixed
 clock, Back button and app launcher over the Three scene. Back and launcher
-use WorldOS's authored control artwork. The launcher pages through visible
-catalog entries and asks SPAOS to open a selected app on a free tile. Clicking
-an occupied floor tile enters its space. Escape or Back leaves the active
-space; after leaving, the renderer waits for a newer preview before releasing
-SPAOS's departing window. These actions use the inherited private World
-socket. A standalone window without that socket remains a visual probe.
+use WorldOS's authored control artwork. Clicking free ground opens the launcher
+for that exact tile; the launcher button finds nearby free ground. A pick
+rechecks occupancy before asking SPAOS to open the app. Up/Down select launcher
+rows, Left/Right change pages, and Enter opens the selected app. Clicking an
+occupied floor tile enters its space. Escape or Back leaves the active space;
+after leaving, the renderer waits for a newer preview before releasing SPAOS's
+departing window. With the launcher closed, the wheel zooms, arrow keys pan,
+and Home recenters on the live floor. Space and app requests use the inherited
+private World socket; camera and launcher navigation stay in the renderer. A
+standalone window without that socket remains a visual probe.
 
-On the Linux host, an isolated SPAOS session delivered its actual 35-entry app
-catalog to Hermes and opened the native launcher. A second isolated session
+The asset preparation step decodes the available WorldOS app-icon GLBs, while
+the runtime loads an icon only when a live space or saved app prop needs it.
+An app with no matching artwork gets a text label from the same WorldOS font
+atlas as the native HUD. Removed spaces and props release their scene nodes,
+preview textures and labels. The prepared asset directory
+currently occupies about 196 MiB for 40 GLBs and their decoded textures on
+the Linux host, so a production package should avoid duplicating these files
+when it also ships the browser World assets.
+The Linux asset reader permits up to 64 MiB per file so the authored Dinner
+GLB (about 53 MiB) can load when needed.
+
+### Ownership while the port grows
+
+- SPAOS's World channel owns the app catalog, spaces and active space; its
+  preview files own the window pixels. The volume is a read-only source of
+  WorldOS prop placement. The native scene never writes either authority.
+- WorldOS's shared `native-grid-scene.js` owns the grid material and tile
+  geometry. New jar, prop and lighting work should move through similarly
+  explicit WorldOS scene factories, then be consumed here. Keeping another
+  hand-copied scene inside Valdi would make visual parity drift.
+- Valdi's Linux host owns Wayland input, Hermes, Dawn and the surface lifetime.
+  `native_shell_hud.js` owns the current camera-fixed controls;
+  `native_world_placement.mjs` owns the free-tile choice and is tested without
+  a GPU. Previews and fallback labels are disposed when SPAOS removes their
+  floor object; GLB templates are cached by asset name and loaded on demand.
+
+On the Linux host, an isolated SPAOS session delivered its actual app catalog
+to Hermes and opened the native launcher. A second isolated session
 used a synthetic three-app catalog; clicking its launcher entry reached
 SPAOS's World `open` handler at the chosen tile. Its screenshot contains only
 synthetic app data and was visually checked. The native scene also passed a
@@ -212,6 +243,17 @@ An isolated headless SPAOS session validated a freshly built bundle through
 tile entry, Back, an updated preview, and release of the departing window.
 The live tty2 session remains running while new bundles are checked in isolated
 sessions.
+
+The parity-v8 bundle passed isolated GPU fixtures with lazily loaded
+Calculator and Settings models, saved Music and Dinner props, and a Console
+label. Dinner verifies the 64 MiB native asset-reader bound. A preview missing
+at startup recovered when its RGBA file appeared; its retry log remained
+bounded.
+A scripted click on tile `(9,0)`, keyboard selection of Calculator, and an
+`open` request for `(9,0)` passed. A full isolated SPAOS session delivered 39
+visible apps over the private World channel. The final C++ bridge and asset
+reader rebuilt successfully on Linux, and the rebuilt binary passed the GPU
+fixtures. Physical wheel and key injection remain to be checked interactively.
 
 This is still a focused native WorldOS shell slice hosted by ValdiLinux's
 Hermes runtime, rather than a Valdi custom view or a full port of `World.html`.

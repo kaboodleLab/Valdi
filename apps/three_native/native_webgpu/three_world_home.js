@@ -2,7 +2,8 @@ import * as THREE from 'three/webgpu';
 import * as tsl from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
-import { createNativeShellHud } from './native_shell_hud.js';
+import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
+import { chooseLaunchTile } from './native_world_placement.mjs';
 
 function nativeIconLoader(name, manifest) {
   const loader = new GLTFLoader();
@@ -75,7 +76,7 @@ async function render() {
   const scene = new THREE.Scene();
   const worldGrid = createNativeGridScene({ THREE, nodes: THREE, tsl });
   const { core, uniforms, material, tileGeometry } = worldGrid;
-  const grid = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), material);
+  const grid = new THREE.Mesh(new THREE.PlaneGeometry(128, 128), material);
   grid.rotation.x = -Math.PI / 2;
   grid.position.y = -.002;
   scene.add(grid);
@@ -87,11 +88,13 @@ async function render() {
   scene.add(light);
 
   const liveShell = typeof __nativeReadShellState === 'function' ||
-    typeof __nativeReadShellFloor === 'function';
-  const extent = liveShell ? 3.8 : 5.8;
+    typeof __nativeReadShellFloor === 'function' || typeof __nativeWorldPoll === 'function';
+  let extent = liveShell ? 3.8 : 5.8;
   const camera = new THREE.OrthographicCamera(-extent, extent, extent, -extent, .1, 100);
   const center = new THREE.Vector3(-1.5, 0, -2.2);
-  camera.position.copy(center).add(new THREE.Vector3(5.3, 7.2, 8.1));
+  const cameraOffset = new THREE.Vector3(5.3, 7.2, 8.1);
+  let cameraManuallyPlaced = false;
+  camera.position.copy(center).add(cameraOffset);
   camera.lookAt(center);
   uniforms.uCamPos.value.copy(camera.position);
   uniforms.uFlatK.value = 0;
@@ -125,19 +128,24 @@ async function render() {
   __webgpuSurfaceStage('WorldOS grid and home tiles ready');
 
   const manifest = JSON.parse(__nativeReadTextAsset('manifest.json'));
-  const iconByName = new Map();
-  for (const { name, x, z, size = .55 } of homeIcons) {
+  const makeText = createNativeText(THREE, manifest, name => __nativeReadAsset(name));
+  async function loadIcon(name, size = .55) {
     const glb = __nativeReadAsset(`${name}.glb`);
     const loader = nativeIconLoader(name, manifest);
     const gltf = await new Promise((resolve, reject) => loader.parse(glb, '', resolve, reject));
     const icon = gltf.scene;
     const bounds = new THREE.Box3().setFromObject(icon);
-    const extent = bounds.getSize(new THREE.Vector3());
-    icon.scale.setScalar(size / Math.max(extent.x, extent.y, extent.z));
+    const dimensions = bounds.getSize(new THREE.Vector3());
+    icon.scale.setScalar(size / Math.max(dimensions.x, dimensions.y, dimensions.z));
     const fitted = new THREE.Box3().setFromObject(icon);
     const iconCenter = fitted.getCenter(new THREE.Vector3());
     const offset = new THREE.Vector3(-iconCenter.x, core.TILE.H + .015 - fitted.min.y,
       -iconCenter.z);
+    return { icon, offset };
+  }
+  const iconByName = new Map();
+  for (const { name, x, z, size = .55 } of homeIcons) {
+    const { icon, offset } = await loadIcon(name, size);
     icon.position.set(x + offset.x, offset.y, z + offset.z);
     scene.add(icon);
     iconByName.set(name, { icon, offset });
@@ -175,8 +183,15 @@ async function render() {
   };
   const extraByName = new Map();
   const cardBySpace = new Map();
-  const floorTileBySpace = new Map();
+  const previewRetryBySpace = new Map();
+  const floorTileByFloorObject = new Map();
+  const modelByName = new Map();
+  const modelLoadByName = new Map();
+  const modelByFloorObject = new Map();
+  const labelByFloorObject = new Map();
   const nativeApps = new Map();
+  let channelFloor = null;
+  let channelFloorRevision = 0;
   let spaceAtCell = new Map();
   let appAtCell = new Map();
   let occupiedCells = new Set();
@@ -189,27 +204,94 @@ async function render() {
   let seenFloorRevision = null;
   let seenCatalogSignature = null;
   let pendingPreview = false;
+  let nextPreviewRetryAt = Infinity;
+  let pendingIconRefresh = false;
+  let cachedState = { layout: {}, props: [] };
+  let cachedFileFloor = null;
+  let cachedFileFloorRevision = null;
+  function requestModel(name) {
+    if (!manifest[name]?.images || modelByName.has(name) || modelLoadByName.has(name)) return;
+    modelLoadByName.set(name, loadIcon(name).then(model => {
+      modelByName.set(name, model);
+      pendingIconRefresh = true;
+      __webgpuSurfaceStage(`WorldOS floor icon loaded: ${name}`);
+    }).catch(error => {
+      __webgpuSurfaceStage(`WorldOS floor icon unavailable: ${name}: ${String(error)}`);
+    }));
+  }
+  function removeFloorLabel(id) {
+    const entry = labelByFloorObject.get(id);
+    if (!entry) return;
+    scene.remove(entry.mesh);
+    entry.mesh.material.map.dispose();
+    entry.mesh.material.dispose();
+    entry.mesh.geometry.dispose();
+    labelByFloorObject.delete(id);
+  }
+  function floorLabel(id, name, x, z) {
+    let entry = labelByFloorObject.get(id);
+    if (entry?.name !== name) {
+      removeFloorLabel(id);
+      const { texture, width, height } = makeText(name.slice(0, 18), [49, 48, 54]);
+      const labelHeight = Math.min(.14, .78 * height / width);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+        new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide,
+          depthWrite: false, toneMapped: false }));
+      mesh.scale.set(labelHeight * width / height, labelHeight, 1);
+      scene.add(mesh);
+      entry = { name, mesh };
+      labelByFloorObject.set(id, entry);
+    }
+    entry.mesh.position.set(x, core.TILE.H + .18, z);
+    entry.mesh.lookAt(camera.position);
+  }
+  function syncFloorStandIn(id, appName, x, z, visible) {
+    let floorModel = modelByFloorObject.get(id);
+    if (floorModel && (floorModel.name !== appName || !visible)) {
+      scene.remove(floorModel.icon);
+      modelByFloorObject.delete(id);
+      floorModel = null;
+    }
+    if (visible && appName && manifest[appName]?.images) {
+      requestModel(appName);
+      const model = modelByName.get(appName);
+      if (model && !floorModel) {
+        floorModel = { name: appName, icon: model.icon.clone(true) };
+        scene.add(floorModel.icon);
+        modelByFloorObject.set(id, floorModel);
+      }
+    }
+    if (floorModel) {
+      const offset = modelByName.get(appName).offset;
+      floorModel.icon.position.set(x + offset.x, offset.y, z + offset.z);
+      removeFloorLabel(id);
+    } else if (visible) {
+      floorLabel(id, appName || `SPACE ${id}`, x, z);
+    } else {
+      removeFloorLabel(id);
+    }
+  }
+  function syncFloorTile(id, x, z, visible) {
+    let tile = floorTileByFloorObject.get(id);
+    if (!tile) {
+      tile = new THREE.Mesh(tileGeometry, tileMaterial);
+      scene.add(tile);
+      floorTileByFloorObject.set(id, tile);
+    }
+    tile.position.set(x, 0, z);
+    tile.visible = visible;
+  }
   const hud = createNativeShellHud({ THREE, scene, camera, manifest,
     readAsset: name => __nativeReadAsset(name),
+    makeText,
     stage: message => __webgpuSurfaceStage(message),
     onBack: () => globalThis.__worldBack(),
-    onOpen: key => {
+    onOpen: (key, selectedTile) => {
       if (typeof __nativeWorldOpen !== 'function' || !nativeApps.has(key)) return;
-      const baseX = Math.round(center.x) + 2;
-      const baseZ = Math.round(center.z);
-      for (let radius = 0; radius < 10; ++radius) {
-        for (let dz = -radius; dz <= radius; ++dz) {
-          for (let dx = -radius; dx <= radius; ++dx) {
-            if (Math.max(Math.abs(dx), Math.abs(dz)) !== radius) continue;
-            const x = baseX + dx;
-            const z = baseZ + dz;
-            if (occupiedCells.has(`${x},${z}`)) continue;
-            if (__nativeWorldOpen(key, x, z))
-              __webgpuSurfaceStage(`WorldOS launcher asked SPAOS to open ${key} at (${x},${z})`);
-            return;
-          }
-        }
-      }
+      const tile = chooseLaunchTile(selectedTile, occupiedCells, center);
+      if (!tile) return;
+      if (__nativeWorldOpen(key, tile.x, tile.z))
+        __webgpuSurfaceStage(`WorldOS launcher asked SPAOS to open ${key} at (${tile.x},${tile.z})`);
     },
   });
   hud.resize(surfaceWidth, surfaceHeight, extent);
@@ -217,10 +299,16 @@ async function render() {
     return Array.isArray(value) && value.length === 2 &&
       Number.isInteger(value[0]) && Number.isInteger(value[1]);
   }
+  function appIconName(value) {
+    let name = String(value || '').toLowerCase();
+    if (name.endsWith('.desktop')) name = name.slice(0, -8);
+    return name.split('.').pop();
+  }
   function pollWorldChannel() {
-    if (typeof __nativeWorldPoll !== 'function') return;
+    if (typeof __nativeWorldPoll !== 'function') return false;
     const incoming = __nativeWorldPoll();
-    if (!incoming) return;
+    if (!incoming) return false;
+    let floorChanged = false;
     for (const line of incoming.split('\n')) {
       if (!line) continue;
       let message;
@@ -237,29 +325,42 @@ async function render() {
         }
         hud.setApps([...nativeApps.values()]);
         __webgpuSurfaceStage(`WorldOS app catalog received: ${nativeApps.size} visible apps`);
+      } else if (message.type === 'spaces' && Array.isArray(message.spaces)) {
+        // The authenticated World channel is the floor's authority. The file
+        // snapshot remains a standalone-probe fallback, not a second live feed.
+        channelFloor = { spaces: message.spaces };
+        ++channelFloorRevision;
+        floorChanged = true;
       }
     }
+    return floorChanged;
   }
-  function applyLiveState() {
+  function applyLiveState(readVolume = false) {
     if (!liveShell) return;
-    let state = { layout: {}, props: [] };
-    let floor = null;
-    let floorRevision = null;
+    let floor = channelFloor || cachedFileFloor;
+    let floorRevision = channelFloor ? channelFloorRevision : cachedFileFloorRevision;
     try {
-      if (typeof __nativeReadShellState === 'function') {
-        state = JSON.parse(__nativeReadShellState());
+      if (readVolume && typeof __nativeReadShellState === 'function') {
+        cachedState = JSON.parse(__nativeReadShellState());
       }
-      if (typeof __nativeReadShellFloor === 'function') {
+      if (!channelFloor && readVolume && typeof __nativeReadShellFloor === 'function') {
         const raw = __nativeReadShellFloor();
-        floor = JSON.parse(raw);
-        floorRevision = floor.rev ?? floor.revision ?? raw;
+        cachedFileFloor = JSON.parse(raw);
+        cachedFileFloorRevision = cachedFileFloor.rev ?? cachedFileFloor.revision ?? raw;
+        floor = cachedFileFloor;
+        floorRevision = cachedFileFloorRevision;
       }
     }
     catch (error) {
       __webgpuSurfaceStage(`WorldOS state or floor read failed: ${String(error)}`);
       return;
     }
-    if (state.rev === seenRevision && floorRevision === seenFloorRevision && !pendingPreview) return;
+    const state = cachedState;
+    if (state.rev === seenRevision && floorRevision === seenFloorRevision &&
+        !pendingPreview && !pendingIconRefresh) return;
+    const snapshotChanged = state.rev !== seenRevision ||
+      floorRevision !== seenFloorRevision;
+    pendingIconRefresh = false;
     const layout = state.layout || {};
     const props = Array.isArray(state.props) ? state.props : [];
     const spaces = Array.isArray(floor?.spaces) ? floor.spaces :
@@ -281,18 +382,23 @@ async function render() {
     // icon once the floor reports a window at the same tile.
     for (const prop of props) {
       if (prop?.kind !== 'spaos' || typeof prop.app !== 'string') continue;
-      const app = prop.app.split('.').pop().toLowerCase();
+      const app = appIconName(prop.app);
       if (iconByName.has(app) && Number.isInteger(prop.tx) && Number.isInteger(prop.tz)) {
         addPosition(app, [prop.tx, prop.tz]);
       }
     }
     for (const space of spaces) {
       if (!Number.isInteger(space?.at?.x) || !Number.isInteger(space?.at?.z)) continue;
-      const app = String(space.apps?.[0] || space.pending || '').split('.').pop().toLowerCase();
+      const app = appIconName(space.apps?.[0] || space.pending);
       if (iconByName.has(app)) addPosition(app, [space.at.x, space.at.z]);
+    }
+    const homeIconCells = new Set();
+    for (const cells of positions.values()) {
+      for (const cell of cells) homeIconCells.add(`${cell[0]},${cell[1]}`);
     }
     const cardCells = new Set();
     const currentSpaces = new Set();
+    const currentFloorObjects = new Set();
     const nextSpaceAtCell = new Map();
     const nextAppAtCell = new Map();
     const nextPreviewGenerationBySpace = new Map();
@@ -306,10 +412,13 @@ async function render() {
     }
     activeSpace = null;
     pendingPreview = false;
+    nextPreviewRetryAt = Infinity;
+    const now = performance.now();
     for (const space of spaces) {
       if (!Number.isInteger(space?.id) || space.id < 1 ||
           !Number.isInteger(space?.at?.x) || !Number.isInteger(space?.at?.z)) continue;
       currentSpaces.add(space.id);
+      currentFloorObjects.add(space.id);
       if (space.active) activeSpace = space.id;
       nextPreviewGenerationBySpace.set(space.id, space.preview_generation || 0);
       const cellKey = `${space.at.x},${space.at.z}`;
@@ -321,34 +430,50 @@ async function render() {
         Number.isInteger(p?.width) && p.width > 0 && p.width <= 4096 &&
         Number.isInteger(p?.height) && p.height > 0 && p.height <= 4096) : null;
       let card = cardBySpace.get(space.id);
+      if (!shot) previewRetryBySpace.delete(space.id);
       if (shot && typeof __nativeReadShellPreview === 'function' &&
           (!card || card.generation !== shot.generation || card.window !== shot.window)) {
-        try {
-          const pixels = new Uint8Array(__nativeReadShellPreview(
-            space.id, shot.window, shot.width, shot.height));
-          const texture = new THREE.DataTexture(pixels, shot.width, shot.height, THREE.RGBAFormat);
-          texture.flipY = false;
-          texture.needsUpdate = true;
-          if (!card) {
-            const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
-              new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true,
-                depthWrite: false, toneMapped: false }));
-            scene.add(mesh);
-            card = { mesh, generation: 0, window: 0, width: shot.width, height: shot.height };
-            cardBySpace.set(space.id, card);
-          } else {
-            card.mesh.material.map?.dispose();
-          }
-          card.mesh.material.map = texture;
-          card.mesh.material.needsUpdate = true;
-          card.generation = shot.generation;
-          card.window = shot.window;
-          card.width = shot.width;
-          card.height = shot.height;
-          __webgpuSurfaceStage(`WorldOS preview updated: space ${space.id}, generation ${shot.generation}`);
-        } catch (error) {
+        const previousRetry = previewRetryBySpace.get(space.id);
+        const sameRetry = previousRetry?.window === shot.window &&
+          previousRetry?.generation === shot.generation;
+        if (sameRetry && now < previousRetry.at) {
           pendingPreview = true;
-          __webgpuSurfaceStage(`WorldOS preview pending: space ${space.id}: ${String(error)}`);
+          nextPreviewRetryAt = Math.min(nextPreviewRetryAt, previousRetry.at);
+        } else {
+          try {
+            const pixels = new Uint8Array(__nativeReadShellPreview(
+              space.id, shot.window, shot.width, shot.height));
+            const texture = new THREE.DataTexture(pixels, shot.width, shot.height, THREE.RGBAFormat);
+            texture.flipY = false;
+            texture.needsUpdate = true;
+            if (!card) {
+              const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
+                new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true,
+                  depthWrite: false, toneMapped: false }));
+              scene.add(mesh);
+              card = { mesh, generation: 0, window: 0, width: shot.width, height: shot.height };
+              cardBySpace.set(space.id, card);
+            } else {
+              card.mesh.material.map?.dispose();
+            }
+            card.mesh.material.map = texture;
+            card.mesh.material.needsUpdate = true;
+            card.generation = shot.generation;
+            card.window = shot.window;
+            card.width = shot.width;
+            card.height = shot.height;
+            previewRetryBySpace.delete(space.id);
+            __webgpuSurfaceStage(`WorldOS preview updated: space ${space.id}, generation ${shot.generation}`);
+          } catch (error) {
+            const delay = sameRetry ? Math.min(previousRetry.delay * 2, 5000) : 150;
+            const at = now + delay;
+            previewRetryBySpace.set(space.id,
+              { window: shot.window, generation: shot.generation, delay, at });
+            pendingPreview = true;
+            nextPreviewRetryAt = Math.min(nextPreviewRetryAt, at);
+            if (!sameRetry)
+              __webgpuSurfaceStage(`WorldOS preview pending: space ${space.id}: ${String(error)}`);
+          }
         }
       }
       if (card && shot) {
@@ -362,6 +487,9 @@ async function render() {
       } else if (card) {
         card.mesh.visible = false;
       }
+      const appName = appIconName(space.apps?.[0] || space.pending);
+      const showStandIn = !cardCells.has(cellKey) && !homeIconCells.has(cellKey);
+      syncFloorStandIn(space.id, appName, space.at.x, space.at.z, showStandIn);
       if (returningSpace?.id === space.id && !space.active &&
           card?.generation > returningSpace.generation &&
           typeof __nativeWorldRelease === 'function' &&
@@ -369,23 +497,47 @@ async function render() {
         __webgpuSurfaceStage(`WorldOS released space ${space.id} after preview update`);
         returningSpace = null;
       }
-      let floorTile = floorTileBySpace.get(space.id);
-      if (!floorTile) {
-        floorTile = new THREE.Mesh(tileGeometry, tileMaterial);
-        scene.add(floorTile);
-        floorTileBySpace.set(space.id, floorTile);
-      }
-      floorTile.position.set(space.at.x, 0, space.at.z);
       const jarAtCell = isCell(layout.jar) && layout.jar[0] === space.at.x &&
         layout.jar[1] === space.at.z;
-      floorTile.visible = !jarAtCell && ![...positions.values()].some(cells =>
-        cells.some(cell => cell[0] === space.at.x && cell[1] === space.at.z));
+      syncFloorTile(space.id, space.at.x, space.at.z,
+        !jarAtCell && !homeIconCells.has(cellKey));
+    }
+    // Saved app props persist after their windows close. Give every app with
+    // a saved tile the same lazy icon and label path as a live space.
+    for (const prop of props) {
+      if (prop?.kind !== 'spaos' || typeof prop.app !== 'string' ||
+          !Number.isInteger(prop.tx) || !Number.isInteger(prop.tz)) continue;
+      const cellKey = `${prop.tx},${prop.tz}`;
+      if (nextSpaceAtCell.has(cellKey) || homeIconCells.has(cellKey)) continue;
+      const id = `prop:${cellKey}`;
+      currentFloorObjects.add(id);
+      nextAppAtCell.set(cellKey, prop.app);
+      syncFloorStandIn(id, appIconName(prop.app), prop.tx, prop.tz, true);
+      syncFloorTile(id, prop.tx, prop.tz, true);
     }
     for (const [id, card] of cardBySpace) {
-      if (!currentSpaces.has(id)) card.mesh.visible = false;
+      if (currentSpaces.has(id)) continue;
+      scene.remove(card.mesh);
+      card.mesh.material.map?.dispose();
+      card.mesh.material.dispose();
+      card.mesh.geometry.dispose();
+      cardBySpace.delete(id);
     }
-    for (const [id, tile] of floorTileBySpace) {
-      if (!currentSpaces.has(id)) tile.visible = false;
+    for (const id of previewRetryBySpace.keys()) {
+      if (!currentSpaces.has(id)) previewRetryBySpace.delete(id);
+    }
+    for (const [id, tile] of floorTileByFloorObject) {
+      if (currentFloorObjects.has(id)) continue;
+      scene.remove(tile);
+      floorTileByFloorObject.delete(id);
+    }
+    for (const [id, model] of modelByFloorObject) {
+      if (currentFloorObjects.has(id)) continue;
+      scene.remove(model.icon);
+      modelByFloorObject.delete(id);
+    }
+    for (const id of labelByFloorObject.keys()) {
+      if (!currentFloorObjects.has(id)) removeFloorLabel(id);
     }
     if (activeSpace !== null && activeSpace === requestedSpace) requestedSpace = null;
     for (const { name } of homeIcons) {
@@ -398,6 +550,10 @@ async function render() {
         const extra = { icon: icon.clone(true), tile: new THREE.Mesh(tileGeometry, tileMaterial) };
         scene.add(extra.icon, extra.tile);
         extras.push(extra);
+      }
+      while (extras.length > Math.max(0, cells.length - 1)) {
+        const extra = extras.pop();
+        scene.remove(extra.icon, extra.tile);
       }
       extraByName.set(name, extras);
       for (let index = 0; index <= extras.length; ++index) {
@@ -421,31 +577,46 @@ async function render() {
       jar.position.set(jarX, core.TILE.H + .16, jarZ);
       tileByName.get('jar').position.set(jarX, 0, jarZ);
     }
-    const allCells = [...positions.values()].flat();
+    const allCells = [];
+    const allCellKeys = new Set();
+    const includeCell = (x, z) => {
+      const key = `${x},${z}`;
+      if (allCellKeys.has(key)) return;
+      allCellKeys.add(key);
+      allCells.push([x, z]);
+    };
+    for (const cells of positions.values()) {
+      for (const cell of cells) includeCell(cell[0], cell[1]);
+    }
     for (const space of spaces) {
       if (Number.isInteger(space?.at?.x) && Number.isInteger(space?.at?.z)) {
-        const cell = [space.at.x, space.at.z];
-        if (!allCells.some(existing => existing[0] === cell[0] && existing[1] === cell[1])) {
-          allCells.push(cell);
-        }
+        includeCell(space.at.x, space.at.z);
       }
     }
-    if (jar.visible) allCells.push([jarX, jarZ]);
-    if (allCells.length) {
+    for (const prop of props) {
+      if (prop?.kind === 'spaos' && Number.isInteger(prop.tx) &&
+          Number.isInteger(prop.tz)) includeCell(prop.tx, prop.tz);
+    }
+    if (jar.visible) includeCell(jarX, jarZ);
+    if (allCells.length && !cameraManuallyPlaced) {
       center.set(allCells.reduce((sum, cell) => sum + cell[0], 0) / allCells.length,
         0, allCells.reduce((sum, cell) => sum + cell[1], 0) / allCells.length);
-      camera.position.copy(center).add(new THREE.Vector3(5.3, 7.2, 8.1));
+      grid.position.x = center.x;
+      grid.position.z = center.z;
+      camera.position.copy(center).add(cameraOffset);
       camera.lookAt(center);
       uniforms.uCamPos.value.copy(camera.position);
     }
     for (const card of cardBySpace.values()) card.mesh.lookAt(camera.position);
+    for (const label of labelByFloorObject.values()) label.mesh.lookAt(camera.position);
     seenRevision = state.rev;
     seenFloorRevision = floorRevision;
     spaceAtCell = nextSpaceAtCell;
     appAtCell = nextAppAtCell;
     previewGenerationBySpace = nextPreviewGenerationBySpace;
     occupiedCells = nextOccupiedCells;
-    __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jar.visible)} app cells, jar ${jar.visible}`);
+    if (snapshotChanged)
+      __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jar.visible)} app cells, jar ${jar.visible}`);
   }
 
   const raycaster = new THREE.Raycaster();
@@ -519,6 +690,42 @@ async function render() {
     hud.resize(width, height, extent);
     __webgpuSurfaceStage(`WorldOS surface resized: ${width}x${height}`);
   };
+  globalThis.__worldNavigate = (kind, amount = 1) => {
+    if (hud.key(kind === 'recenter' ? 'home' : kind)) return;
+    if (kind === 'recenter') {
+      cameraManuallyPlaced = false;
+      seenRevision = null;
+      seenFloorRevision = null;
+      applyLiveState();
+      return;
+    }
+    if (kind === 'zoom') {
+      extent = THREE.MathUtils.clamp(extent * (amount > 0 ? .88 : 1.12), 1.2, 24);
+      camera.left = -extent * surfaceWidth / surfaceHeight;
+      camera.right = extent * surfaceWidth / surfaceHeight;
+      camera.top = extent;
+      camera.bottom = -extent;
+      camera.updateProjectionMatrix();
+      hud.resize(surfaceWidth, surfaceHeight, extent);
+    } else {
+      const forward = new THREE.Vector3(-cameraOffset.x, 0, -cameraOffset.z).normalize();
+      const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
+      const step = Math.max(.25, extent * .25);
+      if (kind === 'left' || kind === 'right')
+        center.addScaledVector(right, step * (kind === 'right' ? 1 : -1));
+      else if (kind === 'up' || kind === 'down')
+        center.addScaledVector(forward, step * (kind === 'up' ? 1 : -1));
+      else return;
+      camera.position.copy(center).add(cameraOffset);
+      camera.lookAt(center);
+      grid.position.x = center.x;
+      grid.position.z = center.z;
+      uniforms.uCamPos.value.copy(camera.position);
+      for (const card of cardBySpace.values()) card.mesh.lookAt(camera.position);
+      for (const label of labelByFloorObject.values()) label.mesh.lookAt(camera.position);
+    }
+    cameraManuallyPlaced = true;
+  };
   globalThis.__worldPointer = (x, y, clicked) => {
     if (clicked && frameTiming) pendingInputs.push({
       sequence: ++inputSequence, at: performance.now(), afterFrame: frame,
@@ -543,6 +750,8 @@ async function render() {
           if (app && nativeApps.has(app) && typeof __nativeWorldOpen === 'function') {
             if (__nativeWorldOpen(app, cx, cz))
               __webgpuSurfaceStage(`WorldOS asked SPAOS to open ${app} at (${cx},${cz})`);
+          } else if (!occupiedCells.has(cellKey) && nativeApps.size) {
+            hud.openAt(cx, cz);
           }
         }
       }
@@ -555,8 +764,10 @@ async function render() {
     const interval = previousStart === null ? null : startedAt - previousStart;
     const wakeLate = scheduledFor === null ? null : startedAt - scheduledFor;
     previousStart = startedAt;
-    pollWorldChannel();
-    if (frame % 60 === 0) applyLiveState();
+    const floorChanged = pollWorldChannel();
+    if (floorChanged || pendingIconRefresh || frame % 60 === 0 ||
+        (pendingPreview && startedAt >= nextPreviewRetryAt))
+      applyLiveState(frame % 60 === 0);
     if (frame % 60 === 0) hud.tick();
     uniforms.uWave.value.set(waveX, waveZ,
       ((startedAt - waveStart) * waveUnitsPerMs) % 9.7, .46);
@@ -567,7 +778,9 @@ async function render() {
     const renderEnd = frameTiming ? performance.now() : 0;
     let pixel = null;
     let presentEnd = 0;
-    if (frame === 0) {
+    // An opt-in later capture lets visual probes inspect assets that load after
+    // the first frame without changing production presentation cadence.
+    if (frame === 0 || frame === globalThis.__worldCaptureFrame) {
       const frameWidth = surfaceWidth;
       const frameHeight = surfaceHeight;
       const texture = context.getCurrentTexture();
