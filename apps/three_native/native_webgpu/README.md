@@ -111,6 +111,34 @@ first swapchain frame by GPU readback for visual inspection. The host follows
 Wayland pixel-size changes, including SPAOS fullscreen, and updates the Three
 camera and WebGPU drawing buffer.
 
+The normal bundle paces draw starts at 60 Hz, accounting for the synchronous
+draw work before scheduling the next callback. Jar and click-wave motion use
+elapsed time, so changing frame cadence does not change animation speed.
+For an isolated comparison,
+prepend configuration to the bundled `world.js` before launching it. This
+prefix enables 120-frame timing reports without changing the normal schedule:
+
+```js
+globalThis.__worldFrameTiming = true;
+```
+
+To restore the previous post-draw 16 ms timer for comparison, prepend:
+
+```js
+globalThis.__worldFrameTiming = true;
+globalThis.__worldFramePacing = 'legacy';
+```
+
+The `WorldOS frame timing` stage line reports p50, p95 and maximum values in
+milliseconds for callback intervals, timer wake lateness, state/HUD updates,
+the synchronous `renderer.render()` call, the `context.present()` call, and
+total synchronous draw work. Timing starts at the third frame because the
+first frame performs GPU readback. With timing enabled, a click also logs
+`WorldOS input to present`, measured from its JavaScript pointer handler to
+the next `context.present()` call. These JS-side spans do not measure GPU
+completion or scanout. Compare variants using the same scene, assets, GPU and
+compositor session.
+
 To follow an active SPAOS WorldOS volume, set `WORLD_OS_NATIVE_STATE` to its
 `WorldOS/State/world.json` path. The native host reads that file without writing
 to it. The scene polls its `rev`, places the jar from `layout.jar`, places

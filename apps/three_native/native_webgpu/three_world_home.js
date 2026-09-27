@@ -454,7 +454,40 @@ async function render() {
   const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), .002);
   let frame = 0;
   let stopped = false;
-  let waveX = 0, waveZ = 0, waveStart = 0;
+  // A bundle prefix can select the previous post-draw timer for comparison.
+  // Otherwise pace start-to-start so rendering time does not add to the wait.
+  const framePacing = globalThis.__worldFramePacing === 'legacy' ? 'legacy' : 'deadline';
+  const requestedPeriod = globalThis.__worldFramePeriodMs;
+  const framePeriodMs = Number.isFinite(requestedPeriod) &&
+    requestedPeriod >= 8 && requestedPeriod <= 100 ? requestedPeriod : 1000 / 60;
+  const frameTiming = globalThis.__worldFrameTiming === true;
+  const timingSamples = [];
+  let previousStart = null;
+  let scheduledFor = null;
+  let inputSequence = 0;
+  const pendingInputs = [];
+  function reportFrameTiming() {
+    const fields = ['interval', 'wakeLate', 'update', 'render', 'present', 'work'];
+    const report = { mode: framePacing, periodMs: framePacing === 'deadline' ? framePeriodMs : 16,
+      frames: timingSamples.length };
+    for (const field of fields) {
+      const sorted = timingSamples.map(sample => sample[field])
+        .filter(Number.isFinite).sort((a, b) => a - b);
+      if (sorted.length) report[`${field}Ms`] = {
+        p50: Math.round(sorted[Math.ceil(sorted.length * .5) - 1] * 100) / 100,
+        p95: Math.round(sorted[Math.ceil(sorted.length * .95) - 1] * 100) / 100,
+        max: Math.round(sorted[sorted.length - 1] * 100) / 100,
+      };
+    }
+    __webgpuSurfaceStage(`WorldOS frame timing ${JSON.stringify(report)}`);
+    timingSamples.length = 0;
+  }
+  // Keep motion at the legacy scene's observed ~38-fps speed while draw
+  // cadence changes. Frame numbers still count presents and poll intervals.
+  const animationStart = performance.now();
+  const waveUnitsPerMs = .018 * 1.4 * 38 / 1000;
+  const jarRadiansPerMs = .004 * 38 / 1000;
+  let waveX = 0, waveZ = 0, waveStart = animationStart;
   globalThis.__nativeStop = () => { stopped = true; };
   globalThis.__worldBack = () => {
     if (hud.isOpen()) { hud.close(); return; }
@@ -487,6 +520,9 @@ async function render() {
     __webgpuSurfaceStage(`WorldOS surface resized: ${width}x${height}`);
   };
   globalThis.__worldPointer = (x, y, clicked) => {
+    if (clicked && frameTiming) pendingInputs.push({
+      sequence: ++inputSequence, at: performance.now(), afterFrame: frame,
+    });
     if (hud.pointer(x, y, clicked) || hud.isOpen()) return;
     pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
     raycaster.setFromCamera(pointerNdc, camera);
@@ -495,7 +531,7 @@ async function render() {
       uniforms.uHoverCell.value.set(cx, cz);
       uniforms.uHasHover.value = 1;
       if (clicked) {
-        waveX = cx; waveZ = cz; waveStart = frame;
+        waveX = cx; waveZ = cz; waveStart = performance.now();
         const cellKey = `${cx},${cz}`;
         if (spaceAtCell.has(cellKey) && typeof __nativeWorldEnter === 'function') {
           if (__nativeWorldEnter(cx, cz)) {
@@ -515,15 +551,22 @@ async function render() {
 
   async function draw() {
     if (stopped) return;
+    const startedAt = performance.now();
+    const interval = previousStart === null ? null : startedAt - previousStart;
+    const wakeLate = scheduledFor === null ? null : startedAt - scheduledFor;
+    previousStart = startedAt;
     pollWorldChannel();
     if (frame % 60 === 0) applyLiveState();
     if (frame % 60 === 0) hud.tick();
     uniforms.uWave.value.set(waveX, waveZ,
-      ((frame - waveStart) * .018 * 1.4) % 9.7, .46);
+      ((startedAt - waveStart) * waveUnitsPerMs) % 9.7, .46);
     uniforms.uWaveK.value.set(.42, .1, 1.25, 0);
-    jar.rotation.y = frame * .004;
+    jar.rotation.y = (startedAt - animationStart) * jarRadiansPerMs;
+    const updateEnd = frameTiming ? performance.now() : 0;
     renderer.render(scene, camera);
+    const renderEnd = frameTiming ? performance.now() : 0;
     let pixel = null;
+    let presentEnd = 0;
     if (frame === 0) {
       const frameWidth = surfaceWidth;
       const frameHeight = surfaceHeight;
@@ -540,6 +583,7 @@ async function render() {
       );
       device.queue.submit([encoder.finish()]);
       context.present();
+      if (frameTiming) presentEnd = performance.now();
       await readback.mapAsync(GPUMapMode.READ);
       const mapped = readback.getMappedRange();
       if (typeof __nativeSaveFrame === 'function') {
@@ -552,8 +596,26 @@ async function render() {
       readback.destroy();
     } else {
       context.present();
+      if (frameTiming) presentEnd = performance.now();
     }
     frame++;
+    if (frameTiming && pendingInputs.length) {
+      for (const input of pendingInputs) {
+        __webgpuSurfaceStage(`WorldOS input to present ${JSON.stringify({
+          sequence: input.sequence, frame, framesLater: frame - input.afterFrame,
+          ms: Math.round((presentEnd - input.at) * 100) / 100,
+        })}`);
+      }
+      pendingInputs.length = 0;
+    }
+    // The first draw reads back a GPU pixel; the next interval includes that
+    // one-off wait, so start steady timing with the third presented frame.
+    if (frameTiming && frame > 2) {
+      timingSamples.push({ interval, wakeLate, update: updateEnd - startedAt,
+        render: renderEnd - updateEnd, present: presentEnd - renderEnd,
+        work: presentEnd - startedAt });
+      if (timingSamples.length === 120) reportFrameTiming();
+    }
     if (frame === 1 && __nativeFrameLimit === 0) {
       __webgpuSurfaceDone(pixel[3] === 255,
         `WorldOS home via Three r${THREE.REVISION}; center GPU pixel ${pixel.join(',')}`);
@@ -565,10 +627,14 @@ async function render() {
       return;
     }
     if (frame % 120 === 0) __webgpuSurfaceStage(`WorldOS frames presented: ${frame}`);
+    const afterDraw = performance.now();
+    const delay = framePacing === 'deadline' ?
+      Math.max(0, framePeriodMs - (afterDraw - startedAt)) : 16;
+    scheduledFor = afterDraw + delay;
     setTimeout(() => draw().catch(error => {
       stopped = true;
       __webgpuSurfaceDone(false, String(error?.stack || error));
-    }), 16);
+    }), delay);
   }
 
   await draw();
