@@ -79,7 +79,12 @@ the production jar's lathe profile with a Three physical glass stand-in.
 The home floor and People preview are separate scene groups. The bottom-left
 People control opens the eleven members of WorldOS's own `apps/people/roster.mjs`
 sample, using authored character GLBs and the worker's retargeted `StandingIdle`
-animation; Back returns to the home floor. The sample is visibly marked.
+and `Walk` animations; Back returns to the home floor. The sample is visibly marked.
+Movement, pathfinding, crowd avoidance and arrival/departure state come from
+WorldOS's pure `character-world.js`, bundled into Hermes with a native Three
+visual adapter. The adapter shares equivalent skeleton palettes inside each
+avatar, as WorldOS does. Gestures, conversations and portal interactions are
+still browser-World features.
 The SPAOS floor and app channel continue updating while People is open.
 When `SPAOS_WORLD_OS_ROOT` points to the WorldOS tree of the running SPAOS
 agent service and `SPAOS_AGENT_SERVICE=1`, `run_spaos_world.sh` starts a
@@ -107,7 +112,8 @@ overwrite an existing directory and publishes `assets/`, `world.js`, and
 `shell.js` only after all have built successfully. Set `ESBUILD_BIN` if esbuild is not in the
 Node directory's `.bin/` folder. `WORLD_SCENE_ROOT` must be a SPAOS checkout
 containing `kernel/engine/native-grid-scene.js`. `WORLD_OS_ROOT` must have
-the sibling `apps/people/roster.mjs` source. The Linux demo uses SPAOS
+`kernel/engine/character-world.js` and the sibling `apps/people/roster.mjs`
+source. The Linux demo uses SPAOS
 `codex/world-native-scene-contract` at `52f5fa66`. That scene factory is not
 yet in SPAOS main. The shell bundle also reads the sibling SPAOS shell protocol
 source so its version matches the compositor. If the scene was staged without
@@ -165,6 +171,12 @@ first frame performs GPU readback. With timing enabled, a click also logs
 the next `context.present()` call. These JS-side spans do not measure GPU
 completion or scanout. Compare variants using the same scene, assets, GPU and
 compositor session.
+
+On the Linux test GPU at 1596×876, the eleven-person moving sample measured
+about 21 ms median and 25 ms p95 frame interval after loading. A synthetic
+two-person live roster measured about 17 ms median and 21 ms p95. Cold model
+parse and GPU upload still cause visible one-time hitches. These numbers are
+local JS-side timings, not a full display latency measurement.
 
 To follow an active SPAOS WorldOS volume, set `WORLD_OS_NATIVE_STATE` to its
 `WorldOS/State/world.json` path. The native host reads that file without writing

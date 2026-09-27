@@ -1,5 +1,6 @@
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import { TEAM } from '@worldos/people-roster';
+import { createCharacterWorld } from '@worldos/character-world';
 
 // A separate WorldOS scene lane. Keep its assets, visibility and camera state
 // behind one boundary so the home floor can keep receiving SPAOS updates while
@@ -19,10 +20,11 @@ const SAMPLE_PEOPLE = TEAM.map(person => ({
 
 // WorldOS's custom character rigs retarget the worker's authored animation
 // onto each person's bind pose. This narrow port uses the same quaternion and
-// hip-position alignment for StandingIdle; other actions remain in WorldOS.
-function standingIdle(THREE, source, target) {
-  const clip = source.animations.find(item => item.name === 'StandingIdle');
-  if (!clip) throw new Error('WorldOS worker has no StandingIdle clip');
+// hip-position alignment for StandingIdle and Walk. The movement simulation
+// itself is WorldOS's character-world.js, bundled without its browser shell.
+function retargetClip(THREE, source, target, clipName) {
+  const clip = source.animations.find(item => item.name === clipName);
+  if (!clip) throw new Error(`WorldOS worker has no ${clipName} clip`);
   const bones = root => {
     const found = new Map();
     root.traverse(object => { if (object.isBone) found.set(object.name, object); });
@@ -56,8 +58,27 @@ function standingIdle(THREE, source, target) {
         track.times, values, track.getInterpolation()));
     }
   }
-  if (!tracks.length) throw new Error('WorldOS character has no matching idle skeleton');
-  return new THREE.AnimationClip('StandingIdle', clip.duration, tracks);
+  if (!tracks.length) throw new Error(`WorldOS character has no matching ${clipName} skeleton`);
+  return new THREE.AnimationClip(clipName, clip.duration, tracks);
+}
+
+// SkeletonUtils gives each skinned mesh its own palette even when all clothing
+// meshes use the same bones. WorldOS's shareCharacterSkeletons makes one
+// palette per equivalent bind, avoiding duplicate GPU updates per avatar.
+function shareSkeletonPalettes(root) {
+  const palettes = [];
+  let shared = 0;
+  root.traverse(mesh => {
+    const skin = mesh.skeleton;
+    if (!mesh.isSkinnedMesh || !skin) return;
+    const same = palettes.find(other => other.bones.length === skin.bones.length &&
+      other.boneInverses.length === skin.boneInverses.length &&
+      other.bones.every((bone, index) => bone === skin.bones[index] &&
+        other.boneInverses[index].equals(skin.boneInverses[index])));
+    if (same) { mesh.skeleton = same; shared++; }
+    else palettes.push(skin);
+  });
+  return shared;
 }
 
 export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
@@ -161,69 +182,139 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
   let open = false;
   let source = 'sample';
   let currentRows = SAMPLE_PEOPLE;
+  let visualQueue = Promise.resolve();
+  const desired = new Map();
+  const present = new Map();
+  const departures = new Map();
+  function disposeLabel(label) {
+    root.remove(label);
+    label.userData.texture?.dispose();
+    label.traverse(object => {
+      object.geometry?.dispose();
+      object.material?.dispose();
+    });
+  }
+  function updateName(id, row) {
+    const actor = actors.get(id);
+    const name = row.name || id;
+    if (!actor || actor.name === name) return;
+    disposeLabel(actor.label);
+    actor.label = makeLabel(name, actor.group.position.x, .045,
+      actor.group.position.z + .31);
+    actor.label.visible = actor.group.visible;
+    root.add(actor.label);
+    actor.name = name;
+  }
+  function createVisual({ id, asset }) {
+    // WorldOS's mock arrivals load one person at a time. Keep the same limit
+    // so eleven GLBs do not all parse and upload during a single draw.
+    const pending = visualQueue.then(async () => {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      const [model, worker] = await Promise.all([modelFor(asset), modelFor('person-worker')]);
+      const body = cloneSkeleton(model.scene);
+      const palettesShared = shareSkeletonPalettes(body);
+      const idleClip = model.animations.find(clip => clip.name === 'StandingIdle') ||
+        retargetClip(THREE, worker, body, 'StandingIdle');
+      const walkClip = model.animations.find(clip => clip.name === 'Walk') ||
+        (model.animations.length === 1 ? model.animations[0] : null) ||
+        retargetClip(THREE, worker, body, 'Walk');
+      const mixer = new THREE.AnimationMixer(body);
+      const idle = mixer.clipAction(idleClip), walk = mixer.clipAction(walkClip);
+      idle.play();
+      mixer.update(0);
+      const bounds = new THREE.Box3().setFromObject(body);
+      const size = bounds.getSize(new THREE.Vector3());
+      body.scale.setScalar(1.12 / size.y);
+      const fitted = new THREE.Box3().setFromObject(body);
+      body.position.set(-(fitted.min.x + fitted.max.x) / 2, -.065 - fitted.min.y,
+        -(fitted.min.z + fitted.max.z) / 2);
+      const group = new THREE.Group();
+      group.add(body);
+      const shadow = new THREE.Mesh(new THREE.CircleGeometry(.24, 32),
+        new THREE.MeshBasicMaterial({ color: 0x353539, transparent: true,
+          opacity: .18, depthWrite: false, toneMapped: false }));
+      shadow.rotation.x = -Math.PI / 2;
+      shadow.scale.y = .42;
+      shadow.position.y = -.075;
+      group.add(shadow);
+      const name = desired.get(id)?.name || id;
+      const actor = { group, label: makeLabel(name, 0, .045, 0), name };
+      group.visible = actor.label.visible = false;
+      root.add(group, actor.label);
+      actors.set(id, actor);
+      stage(`WorldOS People model loaded: ${name} (${asset})`);
+      if (globalThis.__nativePeopleDiagnostics)
+        stage(`WorldOS People skeleton palettes shared: ${name} ${palettesShared}`);
+      let action = idle;
+      return {
+        update(state, dt) {
+          group.position.set(state.x, 0, state.z);
+          group.rotation.y = state.heading;
+          actor.label.position.set(state.x, .045, state.z + .31);
+          group.visible = actor.label.visible = state.alpha > .03;
+          const next = state.speed > .02 ? walk : idle;
+          if (next !== action) {
+            next.reset().fadeIn(.18).play();
+            action.fadeOut(.18);
+            action = next;
+          }
+          if (next === walk) walk.timeScale = Math.max(.2, state.speed / .38);
+          mixer.update(dt);
+        },
+        dispose() {
+          root.remove(group);
+          disposeLabel(actor.label);
+          shadow.geometry.dispose();
+          shadow.material.dispose();
+          mixer.stopAllAction();
+          mixer.uncacheRoot(body);
+          if (actors.get(id) === actor) actors.delete(id);
+        },
+      };
+    });
+    visualQueue = pending.then(() => {}, () => {});
+    return pending;
+  }
+  const world = createCharacterWorld({
+    createVisual,
+    getObstacles: () => [{ x: -.15, z: -.18, half: .65 },
+      { x: .25, z: 1.35, half: .65 }],
+    getVisibility: () => open ? 1 : 0,
+    canMove: () => open,
+    withinView: point => Math.abs(point.x) < 4.8 && Math.abs(point.z) < 3.3,
+  });
   function setPeople(rows, { sample = false } = {}) {
     source = sample ? 'sample' : 'live';
     currentRows = rows;
-    const visible = new Set();
+    desired.clear();
     for (const row of rows) {
       if (typeof row?.id !== 'string' || typeof row?.model !== 'string' ||
           !Number.isFinite(row.x) || !Number.isFinite(row.z)) continue;
-      visible.add(row.id);
-      let actor = actors.get(row.id);
-      if (!actor) {
-        const group = new THREE.Group();
-        root.add(group);
-        const shadow = new THREE.Mesh(new THREE.CircleGeometry(.24, 32),
-          new THREE.MeshBasicMaterial({ color: 0x353539, transparent: true,
-            opacity: .18, depthWrite: false, toneMapped: false }));
-        shadow.rotation.x = -Math.PI / 2;
-        shadow.scale.y = .42;
-        shadow.position.y = -.075;
-        group.add(shadow);
-        const label = makeLabel(row.name || row.id, row.x, .045, row.z + .31);
-        root.add(label);
-        actor = { group, label, name: row.name || row.id, model: null, asset: null };
-        actors.set(row.id, actor);
-      }
-      if (actor.name !== (row.name || row.id)) {
-        root.remove(actor.label);
-        actor.label.userData.texture?.dispose();
-        actor.label = makeLabel(row.name || row.id, row.x, .045, row.z + .31);
-        root.add(actor.label);
-        actor.name = row.name || row.id;
-      }
-      actor.group.position.set(row.x, 0, row.z);
-      actor.label.position.set(row.x, .045, row.z + .31);
-      if (!open) continue;
-      if (actor.asset === row.model) continue;
-      actor.asset = row.model;
-      if (actor.model) actor.group.remove(actor.model);
-      actor.mixer?.stopAllAction();
-      actor.mixer = null;
-      actor.model = null;
-      Promise.all([modelFor(row.model), modelFor('person-worker')]).then(([model, worker]) => {
-        if (actor.asset !== row.model) return;
-        const body = cloneSkeleton(model.scene);
-        const mixer = new THREE.AnimationMixer(body);
-        mixer.clipAction(standingIdle(THREE, worker, body)).play();
-        mixer.update(0);
-        const bounds = new THREE.Box3().setFromObject(body);
-        const size = bounds.getSize(new THREE.Vector3());
-        body.scale.setScalar(1.12 / size.y);
-        const fitted = new THREE.Box3().setFromObject(body);
-        body.position.set(-(fitted.min.x + fitted.max.x) / 2, -.065 - fitted.min.y,
-          -(fitted.min.z + fitted.max.z) / 2);
-        actor.group.add(body);
-        actor.model = body;
-        actor.mixer = mixer;
-        stage(`WorldOS People model loaded: ${row.name || row.id}`);
-      }).catch(error => stage(`WorldOS People model unavailable: ${row.model}: ${String(error)}`));
+      desired.set(row.id, row);
     }
-    for (const [id, actor] of actors) {
-      if (visible.has(id)) continue;
-      root.remove(actor.group, actor.label);
-      actor.label.userData.texture?.dispose();
-      actors.delete(id);
+    if (!open) return;
+    for (const [id, row] of desired) {
+      const leaving = departures.get(id);
+      if (leaving) {
+        clearTimeout(leaving.timer);
+        departures.delete(id);
+        if (leaving.model !== row.model) world.remove(id);
+      }
+      const previous = present.get(id);
+      if (previous === row.model) { updateName(id, row); continue; }
+      if (previous) world.remove(id);
+      present.set(id, row.model);
+      world.setOnline(id, true, { asset: row.model, x: row.x, z: row.z });
+    }
+    for (const [id, model] of present) {
+      if (desired.has(id)) continue;
+      world.setOnline(id, false);
+      present.delete(id);
+      const timer = setTimeout(() => {
+        departures.delete(id);
+        if (!desired.has(id)) world.remove(id);
+      }, 9000);
+      departures.set(id, { timer, model });
     }
   }
   function useSample() { setPeople(SAMPLE_PEOPLE, { sample: true }); }
@@ -238,9 +329,15 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     for (const actor of actors.values()) actor.label.lookAt(camera.position);
     for (const tag of portalLabels) tag.lookAt(camera.position);
   }
+  let ticks = 0;
   function tick(dt) {
     if (!open) return;
-    for (const actor of actors.values()) actor.mixer?.update(dt);
+    world.tick(performance.now(), dt);
+    if (globalThis.__nativePeopleDiagnostics && ++ticks % 120 === 0) {
+      const states = world.snapshot();
+      stage(`WorldOS People simulation: ${states.filter(row => row.moving).length} walking, ` +
+        `${states.filter(row => row.phase === 'online').length} online`);
+    }
   }
   return { root, enter, leave, isOpen: () => open, setPeople, useSample, faceCamera, tick };
 }
