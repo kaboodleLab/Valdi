@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -28,6 +29,7 @@
 
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <unistd.h>
 
 namespace {
@@ -159,6 +161,35 @@ std::shared_ptr<NativeChannel> channelFromEnvironment(const char* name,
     return std::make_shared<NativeChannel>(fd, maxLine, maxOutbox);
 }
 
+std::shared_ptr<NativeChannel> channelFromLocalSocket(const char* raw,
+                                                     size_t maxLine, size_t maxOutbox) {
+    sockaddr_un address{};
+    if (!raw || raw[0] != '/' || std::strlen(raw) >= sizeof(address.sun_path)) return {};
+    const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) return {};
+    address.sun_family = AF_UNIX;
+    std::strncpy(address.sun_path, raw, sizeof(address.sun_path) - 1);
+    if (connect(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) < 0) {
+        close(fd);
+        return {};
+    }
+    const int flags = fcntl(fd, F_GETFL);
+    if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+        close(fd);
+        return {};
+    }
+    const char* token = std::getenv("VALDI_SHELL_UI_TOKEN");
+    if (!token || std::strlen(token) != 64 ||
+        !std::all_of(token, token + 64, [](unsigned char c) { return std::isxdigit(c); })) {
+        close(fd);
+        return {};
+    }
+    auto channel = std::make_shared<NativeChannel>(fd, maxLine, maxOutbox);
+    if (!channel->sendLine(std::string("{\"type\":\"ui_auth\",\"token\":\"") + token + "\"}"))
+        return {};
+    return channel;
+}
+
 std::shared_ptr<NativeChannel> worldChannelFromEnvironment() {
     auto channel = channelFromEnvironment("SPAOS_APP_CHANNEL_FD", 4096, 16384);
     if (!channel) return {};
@@ -215,9 +246,11 @@ int main(int argc, char** argv) {
         }
     }
     if (interactive) frameLimit = 0;
-    if (shellClient && (scriptPath.empty() || !std::getenv("SPAOS_SHELL_CHANNEL_FD") ||
+    const bool directShell = std::getenv("SPAOS_SHELL_CHANNEL_FD") != nullptr;
+    const bool localShell = std::getenv("VALDI_SHELL_UI_SOCKET") != nullptr;
+    if (shellClient && (scriptPath.empty() || directShell == localShell ||
                         std::getenv("SPAOS_APP_CHANNEL_FD"))) {
-        std::fprintf(stderr, "--shell-client requires a script and only SPAOS_SHELL_CHANNEL_FD\n");
+        std::fprintf(stderr, "--shell-client requires exactly one Shell or local UI channel\n");
         return 2;
     }
     if (!scriptPath.empty()) {
@@ -264,7 +297,10 @@ int main(int argc, char** argv) {
     auto worldChannel = script.empty() || shellClient
         ? std::shared_ptr<NativeChannel>() : worldChannelFromEnvironment();
     auto shellChannel = shellClient
-        ? channelFromEnvironment("SPAOS_SHELL_CHANNEL_FD", 256 * 1024, 1024 * 1024)
+        ? directShell
+            ? channelFromEnvironment("SPAOS_SHELL_CHANNEL_FD", 256 * 1024, 1024 * 1024)
+            : channelFromLocalSocket(std::getenv("VALDI_SHELL_UI_SOCKET"),
+                                     256 * 1024, 1024 * 1024)
         : std::shared_ptr<NativeChannel>();
     if (shellClient && !shellChannel) {
         std::fprintf(stderr, "Cannot open SPAOS shell channel\n");

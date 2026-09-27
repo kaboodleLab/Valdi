@@ -268,14 +268,23 @@ surfaces remain separate work.
 
 ### Native SPAOS Shell capability slice
 
-`native_spaos_shell.js` is a separate Valdi/Hermes/Three/Dawn client for
-SPAOS's **Shell** capability. `run_spaos_shell.sh` uses the inherited
-`SPAOS_SHELL_CHANNEL_FD` and maps the transparent `spaos-space-ui` Wayland
-surface. It checks the compositor hello against the shared protocol version,
-announces lifecycle readiness, reserves the Space UI, sends the dock rectangle,
-and draws a 64-pixel native taskbar. World, space, and active-window buttons
-send compositor requests; SPAOS continues to own window management and
-composition. The World client remains a distinct process and channel.
+`native_spaos_shell.js` is a separate Valdi/Hermes/Three/Dawn Space UI. It
+maps the transparent `spaos-space-ui` Wayland surface and draws a 64-pixel
+native taskbar. World, space, and active-window buttons request compositor
+actions. SPAOS still owns window management and composition. The World client
+remains a distinct process and channel.
+
+`run_spaos_shell_controller.sh` starts a plain Node controller that owns
+`SPAOS_SHELL_CHANNEL_FD`. It reuses SPAOS's `CompositorClient`,
+`InstalledAppSource`, `AppCatalog`, Package Manager client, manifest and
+receipt binding, and XDG desktop scanner. It publishes the authenticated app
+catalog and all verb-owner reservations, resolves World `open_app` and
+`present_app` against that catalog, and sends digest-bound launch records to
+SPAOS. Host desktop entries use the existing native command path. The
+controller spawns Valdi with no Shell capability descriptor. The renderer
+authenticates over a private local socket and can request only current window
+and space actions and the bounded dock geometry. `run_spaos_shell.sh` remains
+a direct-capability probe for comparison, not the controller configuration.
 
 The Linux headless test runs an isolated Sway and SPAOS session through
 `test_native_shell_headless.sh`. It verifies the Shell handshake, role mapping,
@@ -283,13 +292,33 @@ and a GPU readback with a transparent field and visible dock. The captured
 frame reported alpha 0 above the dock and 224 inside it at 1600×900. Existing
 tty sessions are left alone.
 
-This slice does not yet replace SPAOS's Electron shell controller. The native
-client does not publish the Package Manager authenticated app catalog or
-resolve `open_app`/`present_app` into digest-bound launches. It also does not
-serve the voice and harness requests. The next architectural step is a
-headless controller that reuses SPAOS's `InstalledAppSource`, `AppCatalog`,
-receipt validation and launch resolution, owns the Shell capability socket,
-and sends presentation snapshots to the native renderer over a separate
-bounded local channel. The renderer should then have no direct access to
-launch records or the privileged SPAOS Shell socket. Until that controller is
-working, use this mode only in isolated test sessions.
+`build_spaos_shell_controller.sh` bundles the controller and a read-only
+`probe_spaos_catalog.mjs` CLI from the matching SPAOS shell TypeScript. The
+probe reports counts and IDs, never the private token or launch commands.
+The build needs the same Electron binary path currently used for legacy app
+launch records, but neither the controller nor Valdi starts Electron to draw
+the shell. SPAOS apps may still use Electron when launched.
+
+```sh
+ESBUILD_BIN=/path/to/esbuild \
+  apps/three_native/native_webgpu/build_spaos_shell_controller.sh \
+  /path/to/spaos/desktop/shell/src /tmp/spaos-shell-controller
+SPAOS_PRODUCT_SLUG=spaos-clean node /tmp/spaos-shell-controller/probe_spaos_catalog.cjs \
+  /path/to/spaos/desktop /path/to/spaos/desktop/shell/node_modules/electron/dist/electron clean
+```
+
+In the isolated clean-instance run, the controller published 28 authenticated
+SPAOS apps, 12 host apps and 456 verb reservations; WorldOS received 40
+visible app rows. A World `open` request started Calculator through a verified
+digest-bound runtime record, and its Wayland window mapped in its own SPAOS
+space. A separate temporary XDG desktop entry exercised
+the host command path with `/usr/bin/true`. The GPU frame showed alpha 0 above
+the taskbar and 224 inside it. Existing tty sessions remained running.
+
+The controller still omits the Electron shell's voice and harness responders,
+live Verb proxy descriptions, hidden-app settings, backdrop and room-light
+presentation, and windowed titlebar. Host desktop entries are scanned at boot;
+the Package Manager catalog refreshes every minute. The native taskbar is a
+functional first surface, not visual parity with SPAOS's existing Space UI.
+Keep testing it in isolated sessions until those owner duties and UI surfaces
+are ported and reviewed.

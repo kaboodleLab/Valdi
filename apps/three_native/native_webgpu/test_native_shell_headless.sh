@@ -9,8 +9,34 @@ set -euo pipefail
 : "${TEST_LOG_DIR:?Set TEST_LOG_DIR to a retained test log directory}"
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+shell_command=${SHELL_COMMAND:-$script_dir/run_spaos_shell.sh}
+if [[ ${EXPECT_HOST_LAUNCH:-0} == 1 ]]; then
+  export EXPECT_LAUNCH_APP=test-native-host.desktop
+fi
+if [[ -n ${EXPECT_LAUNCH_APP:-} && ! $EXPECT_LAUNCH_APP =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,90}$ ]]; then
+  echo "EXPECT_LAUNCH_APP must be a canonical package name" >&2
+  exit 2
+fi
 mkdir -p "$TEST_LOG_DIR"
 scratch=$(mktemp -d /tmp/native-shell-test.XXXXXXXX)
+if [[ ${EXPECT_HOST_LAUNCH:-0} == 1 ]]; then
+  export XDG_DATA_HOME="$scratch/data"
+  mkdir -p "$XDG_DATA_HOME/applications"
+  cat > "$XDG_DATA_HOME/applications/test-native-host.desktop" <<'DESKTOP'
+[Desktop Entry]
+Type=Application
+Name=Native Host Probe
+Exec=/usr/bin/true
+Terminal=false
+DESKTOP
+fi
+world_bundle=${WORLD_BUNDLE:-$NATIVE_RUNTIME/world.js}
+if [[ -n ${EXPECT_LAUNCH_APP:-} ]]; then
+  cp -- "$world_bundle" "$scratch/world-open-test.js"
+  printf "\nsetTimeout(() => { __nativeWorldOpen('%s', 9, 0); __webgpuSurfaceStage('WorldOS native launch probe requested %s'); }, 2500);\n" \
+    "$EXPECT_LAUNCH_APP" "$EXPECT_LAUNCH_APP" >> "$scratch/world-open-test.js"
+  world_bundle="$scratch/world-open-test.js"
+fi
 sway_pid=
 spaos_pid=
 cleanup() {
@@ -41,12 +67,12 @@ WAYLAND_DISPLAY="$host_socket" SDL_VIDEODRIVER=wayland \
   SPAOS_WORLD_OS_X11=0 XDG_CONFIG_HOME="$scratch/config" \
   WORLD_OS_NATIVE_ASSETS="$NATIVE_RUNTIME/assets" \
   WORLD_OS_NATIVE_STATE="$WORLD_STATE" \
-  VALDI_WORLD_BUNDLE="$NATIVE_RUNTIME/world.js" VALDI_WORLD_BINARY="$VALDI_NATIVE_BINARY" \
+  VALDI_WORLD_BUNDLE="$world_bundle" VALDI_WORLD_BINARY="$VALDI_NATIVE_BINARY" \
   VALDI_SHELL_BUNDLE="$NATIVE_RUNTIME/shell.js" VALDI_SHELL_BINARY="$VALDI_NATIVE_BINARY" \
   VALDI_SHELL_CAPTURE="$TEST_LOG_DIR/shell.ppm" \
   "$SPAOS_COMPOSITOR" --socket "$socket" \
   --world-command "$script_dir/run_spaos_world.sh" \
-  --shell-command "$script_dir/run_spaos_shell.sh" > "$TEST_LOG_DIR/spaos.log" 2>&1 &
+  --shell-command "$shell_command" > "$TEST_LOG_DIR/spaos.log" 2>&1 &
 spaos_pid=$!
 
 for _ in $(seq 1 160); do
@@ -62,7 +88,43 @@ for _ in $(seq 1 80); do
   sleep .25
 done
 grep -q 'Native Space UI GPU frame captured' "$TEST_LOG_DIR/spaos.log"
+grep -Eq 'Native Space UI GPU frame captured.*alpha 0/[1-9][0-9]*' "$TEST_LOG_DIR/spaos.log"
 test -s "$TEST_LOG_DIR/shell.ppm"
+if [[ ${EXPECT_CATALOG:-0} == 1 ]]; then
+  grep -Eq 'WorldOS app catalog received: [1-9][0-9]* visible apps' "$TEST_LOG_DIR/spaos.log"
+  grep -Eq 'published [1-9][0-9]* authenticated SPAOS apps' "$TEST_LOG_DIR/spaos.log"
+fi
+if [[ -n ${EXPECT_LAUNCH_APP:-} ]]; then
+  kind=world
+  marker=digest-bound
+  if [[ ${EXPECT_HOST_LAUNCH:-0} == 1 ]]; then
+    kind=
+    marker=host
+  fi
+  for _ in $(seq 1 100); do
+    if grep -q "requested $marker launch of $kind${kind:+:}$EXPECT_LAUNCH_APP" "$TEST_LOG_DIR/spaos.log"; then break; fi
+    sleep .25
+  done
+  grep -q "requested $marker launch of $kind${kind:+:}$EXPECT_LAUNCH_APP" "$TEST_LOG_DIR/spaos.log"
+  for _ in $(seq 1 100); do
+    if [[ ${EXPECT_HOST_LAUNCH:-0} == 1 ]]; then
+      if grep 'spawned' "$TEST_LOG_DIR/spaos.log" | grep -q '/usr/bin/true'; then break; fi
+    elif grep 'started app runtime instance' "$TEST_LOG_DIR/spaos.log" | grep -q "package.*$EXPECT_LAUNCH_APP"; then break; fi
+    sleep .25
+  done
+  if [[ ${EXPECT_HOST_LAUNCH:-0} == 1 ]]; then
+    grep 'spawned' "$TEST_LOG_DIR/spaos.log" | grep -q '/usr/bin/true'
+  else
+    grep 'started app runtime instance' "$TEST_LOG_DIR/spaos.log" | grep -q "package.*$EXPECT_LAUNCH_APP"
+  fi
+fi
+if [[ -n ${EXPECT_MAPPED_APP_ID:-} ]]; then
+  for _ in $(seq 1 120); do
+    if grep 'toplevel mapped' "$TEST_LOG_DIR/spaos.log" | grep -Fq "$EXPECT_MAPPED_APP_ID"; then break; fi
+    sleep .25
+  done
+  grep 'toplevel mapped' "$TEST_LOG_DIR/spaos.log" | grep -Fq "$EXPECT_MAPPED_APP_ID"
+fi
 python3 - "$TEST_LOG_DIR/shell.ppm" <<'PY'
 from pathlib import Path
 import sys
