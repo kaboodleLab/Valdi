@@ -25,9 +25,11 @@ done
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 grid_scene="$scene_root/kernel/engine/native-grid-scene.js"
+shell_protocol=${SPAOS_SHELL_PROTOCOL_SOURCE:-$scene_root/../shell/src/shared/protocol.ts}
 esbuild_bin=${ESBUILD_BIN:-$node_modules/.bin/esbuild}
 
 [[ -f $grid_scene ]] || fail "WorldOS grid source is missing: $grid_scene"
+[[ -f $shell_protocol ]] || fail "SPAOS shell protocol source is missing: $shell_protocol"
 [[ -d $world_root/assets/media ]] || fail "WorldOS media is missing: $world_root/assets/media"
 [[ -d $node_modules/three && -d $node_modules/sharp ]] ||
   fail "NODE_MODULES must contain Three and sharp: $node_modules"
@@ -53,12 +55,16 @@ NODE_PATH="$node_modules" "$esbuild_bin" "$script_dir/three_world_home.js" \
   --bundle --format=iife --platform=browser --target=es2016 \
   --alias:@worldos/native-grid-scene="$grid_scene" \
   --outfile="$stage/world.js"
+NODE_PATH="$node_modules" "$esbuild_bin" "$script_dir/native_spaos_shell.js" \
+  --bundle --format=iife --platform=browser --target=es2016 \
+  --alias:@spaos/shell-protocol="$shell_protocol" \
+  --outfile="$stage/shell.js"
 
-[[ -s $stage/assets/manifest.json && -s $stage/world.js ]] ||
+[[ -s $stage/assets/manifest.json && -s $stage/world.js && -s $stage/shell.js ]] ||
   fail "the runtime bundle is incomplete"
 [[ ! -e $output && ! -L $output ]] || fail "destination appeared during build: $output"
 mv -T -- "$stage" "$output"
 stage=
 
-printf 'WORLD_OS_NATIVE_ASSETS=%s/assets\nVALDI_WORLD_BUNDLE=%s/world.js\n' \
-  "$output" "$output"
+printf 'WORLD_OS_NATIVE_ASSETS=%s/assets\nVALDI_WORLD_BUNDLE=%s/world.js\nVALDI_SHELL_BUNDLE=%s/shell.js\n' \
+  "$output" "$output" "$output"

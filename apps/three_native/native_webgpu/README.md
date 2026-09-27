@@ -84,12 +84,15 @@ native shell controls. No browser canvas is used at runtime.
 
 With Three r186, esbuild and sharp available in a Node package directory,
 prepare a runtime directory outside the checkout. The script refuses to
-overwrite an existing directory and publishes `assets/` and `world.js` only
-after both have built successfully. Set `ESBUILD_BIN` if esbuild is not in the
+overwrite an existing directory and publishes `assets/`, `world.js`, and
+`shell.js` only after all have built successfully. Set `ESBUILD_BIN` if esbuild is not in the
 Node directory's `.bin/` folder. `WORLD_SCENE_ROOT` must be a SPAOS checkout
 containing `kernel/engine/native-grid-scene.js`; the Linux demo uses SPAOS
 `codex/world-native-scene-contract` at `52f5fa66`. That scene factory is not
-yet in SPAOS main.
+yet in SPAOS main. The shell bundle also reads the sibling SPAOS shell protocol
+source so its version matches the compositor. If the scene was staged without
+that sibling tree, set `SPAOS_SHELL_PROTOCOL_SOURCE` to the matching
+`desktop/shell/src/shared/protocol.ts` before building.
 
 ```sh
 WORLD_OS_ROOT=/path/to/world_os
@@ -262,3 +265,31 @@ for spaces, previews and app input. The native shell currently has the core
 floor, previews, Back, clock and launcher. Production jar shading, the rest of
 the WorldOS HUD, 3D launcher lattice, chat, voice, notifications, and all app
 surfaces remain separate work.
+
+### Native SPAOS Shell capability slice
+
+`native_spaos_shell.js` is a separate Valdi/Hermes/Three/Dawn client for
+SPAOS's **Shell** capability. `run_spaos_shell.sh` uses the inherited
+`SPAOS_SHELL_CHANNEL_FD` and maps the transparent `spaos-space-ui` Wayland
+surface. It checks the compositor hello against the shared protocol version,
+announces lifecycle readiness, reserves the Space UI, sends the dock rectangle,
+and draws a 64-pixel native taskbar. World, space, and active-window buttons
+send compositor requests; SPAOS continues to own window management and
+composition. The World client remains a distinct process and channel.
+
+The Linux headless test runs an isolated Sway and SPAOS session through
+`test_native_shell_headless.sh`. It verifies the Shell handshake, role mapping,
+and a GPU readback with a transparent field and visible dock. The captured
+frame reported alpha 0 above the dock and 224 inside it at 1600×900. Existing
+tty sessions are left alone.
+
+This slice does not yet replace SPAOS's Electron shell controller. The native
+client does not publish the Package Manager authenticated app catalog or
+resolve `open_app`/`present_app` into digest-bound launches. It also does not
+serve the voice and harness requests. The next architectural step is a
+headless controller that reuses SPAOS's `InstalledAppSource`, `AppCatalog`,
+receipt validation and launch resolution, owns the Shell capability socket,
+and sends presentation snapshots to the native renderer over a separate
+bounded local channel. The renderer should then have no direct access to
+launch records or the privileged SPAOS Shell socket. Until that controller is
+working, use this mode only in isolated test sessions.

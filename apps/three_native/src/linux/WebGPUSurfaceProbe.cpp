@@ -40,6 +40,7 @@ struct ProbeResult {
     std::mutex mutex;
     bool finished = false;
     bool presented = false;
+    bool quitRequested = false;
     std::string message;
 };
 
@@ -67,18 +68,23 @@ private:
     std::vector<uint8_t> bytes_;
 };
 
-// SPAOS gives its World client one end of a private socket pair. Keep it
-// nonblocking: the renderer's JS thread must never wait for compositor IPC.
-class WorldChannel final {
+// SPAOS gives its World and Shell clients distinct private socket pairs. Keep
+// both nonblocking: the renderer's JS thread must never wait for compositor IPC.
+class NativeChannel final {
 public:
-    explicit WorldChannel(int fd) : fd_(fd) {}
-    ~WorldChannel() { if (fd_ >= 0) close(fd_); }
+    NativeChannel(int fd, size_t maxLine, size_t maxOutbox)
+        : fd_(fd), maxLine_(maxLine), maxOutbox_(maxOutbox) {}
+    ~NativeChannel() { if (fd_ >= 0) close(fd_); }
 
-    WorldChannel(const WorldChannel&) = delete;
-    WorldChannel& operator=(const WorldChannel&) = delete;
+    NativeChannel(const NativeChannel&) = delete;
+    NativeChannel& operator=(const NativeChannel&) = delete;
+
+    bool isOpen() const { return fd_ >= 0; }
 
     bool sendLine(const std::string& line) {
-        if (fd_ < 0 || line.size() > 4096 || outbound_.size() + line.size() + 1 > 16384)
+        if (fd_ < 0 || line.size() > maxLine_ ||
+            outbound_.size() + line.size() + 1 > maxOutbox_ ||
+            line.find('\n') != std::string::npos || line.find('\r') != std::string::npos)
             return false;
         outbound_ += line;
         outbound_ += '\n';
@@ -132,12 +138,15 @@ private:
         }
     }
     int fd_;
+    size_t maxLine_;
+    size_t maxOutbox_;
     std::string inbound_;
     std::string outbound_;
 };
 
-std::shared_ptr<WorldChannel> worldChannelFromEnvironment() {
-    const char* raw = std::getenv("SPAOS_APP_CHANNEL_FD");
+std::shared_ptr<NativeChannel> channelFromEnvironment(const char* name,
+                                                      size_t maxLine, size_t maxOutbox) {
+    const char* raw = std::getenv(name);
     if (!raw || !*raw) return {};
     char* end = nullptr;
     errno = 0;
@@ -147,7 +156,12 @@ std::shared_ptr<WorldChannel> worldChannelFromEnvironment() {
     if (fcntl(fd, F_GETFD) < 0) return {};
     const int flags = fcntl(fd, F_GETFL);
     if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) return {};
-    auto channel = std::make_shared<WorldChannel>(fd);
+    return std::make_shared<NativeChannel>(fd, maxLine, maxOutbox);
+}
+
+std::shared_ptr<NativeChannel> worldChannelFromEnvironment() {
+    auto channel = channelFromEnvironment("SPAOS_APP_CHANNEL_FD", 4096, 16384);
+    if (!channel) return {};
     channel->sendLine("{\"type\":\"hello\",\"protocol\":1}");
     return channel;
 }
@@ -178,12 +192,15 @@ int main(int argc, char** argv) {
     std::string script;
     std::string scriptPath;
     bool interactive = false;
+    bool shellClient = false;
     int frameLimit = 1;
     for (int i = 1; i < argc; ++i) {
         const std::string arg(argv[i]);
         if (arg == "--interactive") {
             interactive = true;
             frameLimit = 0;
+        } else if (arg == "--shell-client") {
+            shellClient = true;
         } else if (arg.rfind("--frames=", 0) == 0) {
             frameLimit = std::atoi(arg.c_str() + 9);
             if (frameLimit < 1 || frameLimit > 100000) {
@@ -193,11 +210,16 @@ int main(int argc, char** argv) {
         } else if (scriptPath.empty()) {
             scriptPath = arg;
         } else {
-            std::fprintf(stderr, "Usage: %s [--frames=N|--interactive] [bundled-javascript.js]\n", argv[0]);
+            std::fprintf(stderr, "Usage: %s [--frames=N|--interactive] [--shell-client] [bundled-javascript.js]\n", argv[0]);
             return 2;
         }
     }
     if (interactive) frameLimit = 0;
+    if (shellClient && (scriptPath.empty() || !std::getenv("SPAOS_SHELL_CHANNEL_FD") ||
+                        std::getenv("SPAOS_APP_CHANNEL_FD"))) {
+        std::fprintf(stderr, "--shell-client requires a script and only SPAOS_SHELL_CHANNEL_FD\n");
+        return 2;
+    }
     if (!scriptPath.empty()) {
         std::ifstream source(scriptPath);
         if (!source) {
@@ -212,13 +234,14 @@ int main(int argc, char** argv) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
     }
-    const char* title = std::getenv("WORLD_OS_NATIVE_FLOOR")
+    const char* title = shellClient ? "spaos-space-ui" : std::getenv("WORLD_OS_NATIVE_FLOOR")
         ? "WorldOS live floor - Valdi Three/Dawn"
         : std::getenv("WORLD_OS_NATIVE_STATE")
         ? "WorldOS live layout - Valdi Three/Dawn"
         : "WorldOS home scene - Valdi Three/Dawn";
     SDL_Window* window = SDL_CreateWindow(title, kWidth, kHeight,
-                                          SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE);
+        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
+        (shellClient ? SDL_WINDOW_TRANSPARENT : 0));
     if (window == nullptr) {
         std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         SDL_Quit();
@@ -238,7 +261,17 @@ int main(int argc, char** argv) {
     standalone->setupJsRuntime({});
     auto* runtime = standalone->getRuntime().getJavaScriptRuntime();
     auto result = std::make_shared<ProbeResult>();
-    auto worldChannel = script.empty() ? std::shared_ptr<WorldChannel>() : worldChannelFromEnvironment();
+    auto worldChannel = script.empty() || shellClient
+        ? std::shared_ptr<NativeChannel>() : worldChannelFromEnvironment();
+    auto shellChannel = shellClient
+        ? channelFromEnvironment("SPAOS_SHELL_CHANNEL_FD", 256 * 1024, 1024 * 1024)
+        : std::shared_ptr<NativeChannel>();
+    if (shellClient && !shellChannel) {
+        std::fprintf(stderr, "Cannot open SPAOS shell channel\n");
+        SDL_DestroyWindow(window);
+        SDL_Quit();
+        return 2;
+    }
     std::unique_ptr<rnwgpu::RNWebGPUManager> webgpu;
     bool installed = false;
 
@@ -336,6 +369,40 @@ int main(int argc, char** argv) {
                             ",\"z\":" + std::to_string(z) + "}}"));
                     });
                 jsi->global().setProperty(*jsi, "__nativeWorldOpen", std::move(openWorld));
+            }
+            if (shellChannel) {
+                auto pollShell = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeShellPoll"), 0,
+                    [shellChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        return facebook::jsi::String::createFromUtf8(js, shellChannel->poll());
+                    });
+                jsi->global().setProperty(*jsi, "__nativeShellPoll", std::move(pollShell));
+                auto sendShell = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeShellSend"), 1,
+                    [shellChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 1 || !args[0].isString())
+                            throw facebook::jsi::JSError(js, "Expected one SPAOS shell request");
+                        return facebook::jsi::Value(shellChannel->sendLine(args[0].getString(js).utf8(js)));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeShellSend", std::move(sendShell));
+                auto shellConnected = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeShellConnected"), 0,
+                    [shellChannel](facebook::jsi::Runtime&, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        return facebook::jsi::Value(shellChannel->isOpen());
+                    });
+                jsi->global().setProperty(*jsi, "__nativeShellConnected", std::move(shellConnected));
+                auto requestQuit = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeRequestQuit"), 0,
+                    [result](facebook::jsi::Runtime&, const facebook::jsi::Value&,
+                             const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        std::lock_guard<std::mutex> lock(result->mutex);
+                        result->quitRequested = true;
+                        return facebook::jsi::Value::undefined();
+                    });
+                jsi->global().setProperty(*jsi, "__nativeRequestQuit", std::move(requestQuit));
             }
             if (const char* statePath = std::getenv("WORLD_OS_NATIVE_STATE")) {
                 const std::string path(statePath);
@@ -515,7 +582,8 @@ int main(int argc, char** argv) {
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED ||
-                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && !worldChannel)) {
+                (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE &&
+                 !worldChannel && !shellClient)) {
                 quit = true;
                 break;
             }
@@ -596,14 +664,26 @@ int main(int argc, char** argv) {
             }
         }
         if (quit) break;
+        bool presented = false;
+        bool quitRequested = false;
         {
             std::lock_guard<std::mutex> lock(result->mutex);
             complete = result->finished;
+            presented = result->presented;
+            quitRequested = result->quitRequested;
         }
-        if (complete && (!interactive || !result->presented)) break;
+        if (quitRequested || (complete && (!interactive || !presented))) break;
         SDL_Delay(16);
     }
-    if (!interactive && complete && result->presented) SDL_Delay(1500);
+    bool presented = false;
+    std::string message;
+    {
+        std::lock_guard<std::mutex> lock(result->mutex);
+        complete = result->finished;
+        presented = result->presented;
+        message = result->message;
+    }
+    if (!interactive && complete && presented) SDL_Delay(1500);
 
     runtime->dispatchSynchronouslyOnJsThread(STRING_LITERAL("dispose_webgpu_wayland_surface"),
                                              [&](Valdi::JavaScriptEntryParameters& entry) {
@@ -616,9 +696,9 @@ int main(int argc, char** argv) {
         webgpu.reset();
     });
     std::printf("Valdi WebGPU Wayland surface: %s (%s)\n",
-                complete && result->presented ? "presented" : "failed", result->message.c_str());
+                complete && presented ? "presented" : "failed", message.c_str());
     standalone = nullptr;
     SDL_DestroyWindow(window);
     SDL_Quit();
-    return installed && complete && result->presented ? 0 : 1;
+    return installed && complete && presented ? 0 : 1;
 }
