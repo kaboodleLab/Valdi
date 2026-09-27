@@ -76,8 +76,27 @@ time. That factory supplies the painted-grid node material and rounded tile
 geometry from the WorldOS engine. This entry loads seven authored GLBs, using
 the WorldOS Files stack's `assets/media/town/Box.glb` for Files. It also uses
 the production jar's lathe profile with a Three physical glass stand-in.
+The home floor and People preview are separate scene groups. The bottom-left
+People control opens the eleven members of WorldOS's own `apps/people/roster.mjs`
+sample, using authored character GLBs and the worker's retargeted `StandingIdle`
+animation; Back returns to the home floor. The sample is visibly marked.
+The SPAOS floor and app channel continue updating while People is open.
+When `SPAOS_WORLD_OS_ROOT` points to the WorldOS tree of the running SPAOS
+agent service and `SPAOS_AGENT_SERVICE=1`, `run_spaos_world.sh` starts a
+companion process with the native host. It authenticates through SPAOS's
+existing World frontend transport, subscribes to `/ws/roster`, and writes a
+private `live-roster.json` in the prepared asset directory. The renderer reads
+that snapshot and shows live members when the provider is online. A provider
+that is off uses the marked sample. The attachment credential never enters
+Hermes or the snapshot file. The companion exits with the native World.
 Embedded images are decoded ahead of time into RGBA files because Hermes has no browser
 image decoder. `GLTFLoader` still parses geometry, materials and transforms.
+The asset builder repacks each native GLB with valid one-pixel embedded images
+after decoding the real images to RGBA. It preserves geometry, skin and
+animation buffer views; the native texture loader uses the decoded RGBA files.
+The original WorldOS GLBs remain in the source tree. On the Linux probe build,
+this reduced the prepared asset directory from 367 MiB to 192 MiB with four
+People bodies; the eleven-person sample's extra rigs bring it to 218 MiB.
 The same preparation step decodes WorldOS's Back and launcher artwork and
 rasterizes the bundled SF Pro Display font into a small glyph atlas for the
 native shell controls. No browser canvas is used at runtime.
@@ -87,7 +106,8 @@ prepare a runtime directory outside the checkout. The script refuses to
 overwrite an existing directory and publishes `assets/`, `world.js`, and
 `shell.js` only after all have built successfully. Set `ESBUILD_BIN` if esbuild is not in the
 Node directory's `.bin/` folder. `WORLD_SCENE_ROOT` must be a SPAOS checkout
-containing `kernel/engine/native-grid-scene.js`; the Linux demo uses SPAOS
+containing `kernel/engine/native-grid-scene.js`. `WORLD_OS_ROOT` must have
+the sibling `apps/people/roster.mjs` source. The Linux demo uses SPAOS
 `codex/world-native-scene-contract` at `52f5fa66`. That scene factory is not
 yet in SPAOS main. The shell bundle also reads the sibling SPAOS shell protocol
 source so its version matches the compositor. If the scene was staged without
@@ -113,6 +133,10 @@ closes the window. `THREE_NATIVE_LINUX_CAPTURE=/tmp/world-home.ppm` captures the
 first swapchain frame by GPU readback for visual inspection. The host follows
 Wayland pixel-size changes, including SPAOS fullscreen, and updates the Three
 camera and WebGPU drawing buffer.
+For an isolated People capture, prefix the bundle with
+`globalThis.__nativeWorldStartView='people'; globalThis.__worldCaptureFrame=180;`
+and run for at least 181 frames. The first rendered frame is also captured, so
+the later frame overwrites the same PPM after the character models load.
 
 The normal bundle paces draw starts at 60 Hz, accounting for the synchronous
 draw work before scheduling the next callback. Jar and click-wave motion use

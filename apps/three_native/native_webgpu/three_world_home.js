@@ -3,6 +3,8 @@ import * as tsl from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
+import { createNativePeopleScene } from './native_people_scene.js';
+import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
 
 function nativeIconLoader(name, manifest) {
@@ -74,12 +76,14 @@ async function render() {
   __webgpuSurfaceStage('Three/WebGPU renderer ready');
 
   const scene = new THREE.Scene();
+  const homeRoot = new THREE.Group();
+  scene.add(homeRoot);
   const worldGrid = createNativeGridScene({ THREE, nodes: THREE, tsl });
   const { core, uniforms, material, tileGeometry } = worldGrid;
   const grid = new THREE.Mesh(new THREE.PlaneGeometry(128, 128), material);
   grid.rotation.x = -Math.PI / 2;
   grid.position.y = -.002;
-  scene.add(grid);
+  homeRoot.add(grid);
   renderer.toneMapping = THREE.NoToneMapping;
   scene.background = core.COL_BG;
   scene.add(new THREE.AmbientLight(0xffffff, 1.2));
@@ -122,7 +126,7 @@ async function render() {
   for (const { name, x, z } of [...homeIcons, { name: 'jar', x: 1, z: 0 }]) {
     const tile = new THREE.Mesh(tileGeometry, tileMaterial);
     tile.position.set(x, 0, z);
-    scene.add(tile);
+    homeRoot.add(tile);
     tileByName.set(name, tile);
   }
   __webgpuSurfaceStage('WorldOS grid and home tiles ready');
@@ -147,7 +151,7 @@ async function render() {
   for (const { name, x, z, size = .55 } of homeIcons) {
     const { icon, offset } = await loadIcon(name, size);
     icon.position.set(x + offset.x, offset.y, z + offset.z);
-    scene.add(icon);
+    homeRoot.add(icon);
     iconByName.set(name, { icon, offset });
     __webgpuSurfaceStage(`WorldOS icon loaded: ${name}`);
   }
@@ -173,7 +177,7 @@ async function render() {
   );
   jar.position.set(1, core.TILE.H + .16, 0);
   jar.rotation.z = THREE.MathUtils.degToRad(11);
-  scene.add(jar);
+  homeRoot.add(jar);
   __webgpuSurfaceStage('WorldOS jar profile ready');
 
   const layoutKey = {
@@ -222,7 +226,7 @@ async function render() {
   function removeFloorLabel(id) {
     const entry = labelByFloorObject.get(id);
     if (!entry) return;
-    scene.remove(entry.mesh);
+    homeRoot.remove(entry.mesh);
     entry.mesh.material.map.dispose();
     entry.mesh.material.dispose();
     entry.mesh.geometry.dispose();
@@ -238,7 +242,7 @@ async function render() {
         new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide,
           depthWrite: false, toneMapped: false }));
       mesh.scale.set(labelHeight * width / height, labelHeight, 1);
-      scene.add(mesh);
+      homeRoot.add(mesh);
       entry = { name, mesh };
       labelByFloorObject.set(id, entry);
     }
@@ -248,7 +252,7 @@ async function render() {
   function syncFloorStandIn(id, appName, x, z, visible) {
     let floorModel = modelByFloorObject.get(id);
     if (floorModel && (floorModel.name !== appName || !visible)) {
-      scene.remove(floorModel.icon);
+      homeRoot.remove(floorModel.icon);
       modelByFloorObject.delete(id);
       floorModel = null;
     }
@@ -257,7 +261,7 @@ async function render() {
       const model = modelByName.get(appName);
       if (model && !floorModel) {
         floorModel = { name: appName, icon: model.icon.clone(true) };
-        scene.add(floorModel.icon);
+        homeRoot.add(floorModel.icon);
         modelByFloorObject.set(id, floorModel);
       }
     }
@@ -275,17 +279,77 @@ async function render() {
     let tile = floorTileByFloorObject.get(id);
     if (!tile) {
       tile = new THREE.Mesh(tileGeometry, tileMaterial);
-      scene.add(tile);
+      homeRoot.add(tile);
       floorTileByFloorObject.set(id, tile);
     }
     tile.position.set(x, 0, z);
     tile.visible = visible;
+  }
+  const people = createNativePeopleScene({ THREE, scene, camera, tileGeometry, makeText,
+    loadModel: name => new Promise((resolve, reject) => {
+      const loader = nativeIconLoader(name, manifest);
+      loader.parse(__nativeReadAsset(`${name}.glb`), '',
+        resolve, reject);
+    }),
+    stage: message => __webgpuSurfaceStage(message),
+  });
+  let peopleSource = 'sample';
+  let rosterSignature = '';
+  function pollPeopleRoster() {
+    let rows = null;
+    try {
+      const value = JSON.parse(__nativeReadTextAsset('live-roster.json'));
+      if (Number.isFinite(value.receivedAt) && Date.now() - value.receivedAt < 12000)
+        rows = projectPeopleRoster(value.snapshot);
+    } catch {}
+    const signature = rows === null ? 'sample' : JSON.stringify(rows);
+    if (signature === rosterSignature) return;
+    rosterSignature = signature;
+    if (rows === null) {
+      peopleSource = 'sample';
+      people.useSample();
+    } else {
+      peopleSource = 'live';
+      people.setPeople(rows);
+    }
+    hud.setView(people.isOpen() ? 'people' : 'home', peopleSource === 'sample');
+    __webgpuSurfaceStage(`WorldOS People source: ${peopleSource}${rows ? ` (${rows.length} present)` : ''}`);
+  }
+  let homeExtent = extent;
+  function setPeopleOpen(open) {
+    if (open === people.isOpen()) return;
+    if (open) {
+      homeExtent = extent;
+      extent = 3.2;
+      homeRoot.visible = false;
+      scene.background = new THREE.Color(0xf0efed);
+      camera.position.set(0, 5.2, 7.8);
+      camera.lookAt(0, 0, 0);
+      people.enter();
+    } else {
+      extent = homeExtent;
+      people.leave();
+      homeRoot.visible = true;
+      scene.background = core.COL_BG;
+      camera.position.copy(center).add(cameraOffset);
+      camera.lookAt(center);
+      uniforms.uCamPos.value.copy(camera.position);
+    }
+    camera.left = -extent * surfaceWidth / surfaceHeight;
+    camera.right = extent * surfaceWidth / surfaceHeight;
+    camera.top = extent;
+    camera.bottom = -extent;
+    camera.updateProjectionMatrix();
+    hud.resize(surfaceWidth, surfaceHeight, extent);
+    hud.setView(open ? 'people' : 'home', peopleSource === 'sample');
+    people.faceCamera();
   }
   const hud = createNativeShellHud({ THREE, scene, camera, manifest,
     readAsset: name => __nativeReadAsset(name),
     makeText,
     stage: message => __webgpuSurfaceStage(message),
     onBack: () => globalThis.__worldBack(),
+    onPeople: () => setPeopleOpen(!people.isOpen()),
     onOpen: (key, selectedTile) => {
       if (typeof __nativeWorldOpen !== 'function' || !nativeApps.has(key)) return;
       const tile = chooseLaunchTile(selectedTile, occupiedCells, center);
@@ -295,6 +359,8 @@ async function render() {
     },
   });
   hud.resize(surfaceWidth, surfaceHeight, extent);
+  if (globalThis.__nativeWorldStartView === 'people') pollPeopleRoster();
+  if (globalThis.__nativeWorldStartView === 'people') setPeopleOpen(true);
   function isCell(value) {
     return Array.isArray(value) && value.length === 2 &&
       Number.isInteger(value[0]) && Number.isInteger(value[1]);
@@ -450,7 +516,7 @@ async function render() {
               const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1),
                 new THREE.MeshBasicMaterial({ side: THREE.DoubleSide, transparent: true,
                   depthWrite: false, toneMapped: false }));
-              scene.add(mesh);
+              homeRoot.add(mesh);
               card = { mesh, generation: 0, window: 0, width: shot.width, height: shot.height };
               cardBySpace.set(space.id, card);
             } else {
@@ -517,7 +583,7 @@ async function render() {
     }
     for (const [id, card] of cardBySpace) {
       if (currentSpaces.has(id)) continue;
-      scene.remove(card.mesh);
+      homeRoot.remove(card.mesh);
       card.mesh.material.map?.dispose();
       card.mesh.material.dispose();
       card.mesh.geometry.dispose();
@@ -528,12 +594,12 @@ async function render() {
     }
     for (const [id, tile] of floorTileByFloorObject) {
       if (currentFloorObjects.has(id)) continue;
-      scene.remove(tile);
+      homeRoot.remove(tile);
       floorTileByFloorObject.delete(id);
     }
     for (const [id, model] of modelByFloorObject) {
       if (currentFloorObjects.has(id)) continue;
-      scene.remove(model.icon);
+      homeRoot.remove(model.icon);
       modelByFloorObject.delete(id);
     }
     for (const id of labelByFloorObject.keys()) {
@@ -548,12 +614,12 @@ async function render() {
       const extras = extraByName.get(name) || [];
       for (let index = extras.length + 1; index < cells.length; ++index) {
         const extra = { icon: icon.clone(true), tile: new THREE.Mesh(tileGeometry, tileMaterial) };
-        scene.add(extra.icon, extra.tile);
+        homeRoot.add(extra.icon, extra.tile);
         extras.push(extra);
       }
       while (extras.length > Math.max(0, cells.length - 1)) {
         const extra = extras.pop();
-        scene.remove(extra.icon, extra.tile);
+        homeRoot.remove(extra.icon, extra.tile);
       }
       extraByName.set(name, extras);
       for (let index = 0; index <= extras.length; ++index) {
@@ -603,9 +669,11 @@ async function render() {
         0, allCells.reduce((sum, cell) => sum + cell[1], 0) / allCells.length);
       grid.position.x = center.x;
       grid.position.z = center.z;
-      camera.position.copy(center).add(cameraOffset);
-      camera.lookAt(center);
-      uniforms.uCamPos.value.copy(camera.position);
+      if (!people.isOpen()) {
+        camera.position.copy(center).add(cameraOffset);
+        camera.lookAt(center);
+        uniforms.uCamPos.value.copy(camera.position);
+      }
     }
     for (const card of cardBySpace.values()) card.mesh.lookAt(camera.position);
     for (const label of labelByFloorObject.values()) label.mesh.lookAt(camera.position);
@@ -662,6 +730,7 @@ async function render() {
   globalThis.__nativeStop = () => { stopped = true; };
   globalThis.__worldBack = () => {
     if (hud.isOpen()) { hud.close(); return; }
+    if (people.isOpen()) { setPeopleOpen(false); return; }
     if (typeof __nativeWorldLeave === 'function' && __nativeWorldLeave()) {
       const leavingSpace = activeSpace ?? requestedSpace;
       if (leavingSpace !== null) returningSpace = {
@@ -692,6 +761,10 @@ async function render() {
   };
   globalThis.__worldNavigate = (kind, amount = 1) => {
     if (hud.key(kind === 'recenter' ? 'home' : kind)) return;
+    if (people.isOpen()) {
+      if (kind === 'recenter') setPeopleOpen(false);
+      return;
+    }
     if (kind === 'recenter') {
       cameraManuallyPlaced = false;
       seenRevision = null;
@@ -731,6 +804,7 @@ async function render() {
       sequence: ++inputSequence, at: performance.now(), afterFrame: frame,
     });
     if (hud.pointer(x, y, clicked) || hud.isOpen()) return;
+    if (people.isOpen()) return;
     pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
     raycaster.setFromCamera(pointerNdc, camera);
     if (raycaster.ray.intersectPlane(floor, hit)) {
@@ -764,6 +838,8 @@ async function render() {
     const interval = previousStart === null ? null : startedAt - previousStart;
     const wakeLate = scheduledFor === null ? null : startedAt - scheduledFor;
     previousStart = startedAt;
+    people.tick(Math.min(.1, (interval ?? 16) / 1000));
+    if (frame % 60 === 0) pollPeopleRoster();
     const floorChanged = pollWorldChannel();
     if (floorChanged || pendingIconRefresh || frame % 60 === 0 ||
         (pendingPreview && startedAt >= nextPreviewRetryAt))

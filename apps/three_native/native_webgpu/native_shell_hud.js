@@ -100,7 +100,7 @@ export function createNativeText(THREE, manifest, readAsset) {
 }
 
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
-  onBack, onOpen, stage, makeText = createNativeText(THREE, manifest, readAsset) }) {
+  onBack, onPeople, onOpen, stage, makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
   camera.add(root);
   scene.add(camera);
@@ -175,10 +175,14 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     mesh.geometry.dispose();
   }
   const backPlate = roundPlate(42);
+  const peoplePlate = roundPlate(48);
   const launcherPlate = roundPlate(48);
   const back = artwork('back', 36);
   if (back) back.scale.x = -back.scale.x;
   const launcher = artwork('launcher', 38);
+  const peopleText = label('PEOPLE', 0, 0, 12, [50, 49, 54], 'center');
+  const peopleMark = label('SAMPLE PEOPLE', 0, 0, 10, [86, 84, 82], 'center');
+  peopleMark.visible = false;
   const panel = plane(panelWidth, panelHeight, solid(0xf8f5f2, .94), 1001);
   const selectionPlate = plane(panelWidth - 24, rowHeight - 2,
     solid(0xdde4ec, .9), 1005);
@@ -232,6 +236,9 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       mesh.userData.previousUnits = units;
     }
     place(backPlate, 41, 39);
+    place(peoplePlate, 46, height - 46);
+    place(peopleText, 46, height - 46);
+    place(peopleMark, width / 2, 62);
     place(launcherPlate, width - 46, height - 46);
     if (back) place(back, 41, 39);
     if (launcher) place(launcher, width - 46, height - 46);
@@ -272,6 +279,11 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     if (x >= 18 && x <= 64 && y >= 16 && y <= 64) {
       if (open) show(false);
       else onBack();
+      return true;
+    }
+    if (x >= 18 && x <= 74 && y >= height - 74 && y <= height - 18) {
+      if (open) show(false);
+      onPeople?.();
       return true;
     }
     if (x >= width - 72 && x <= width - 18 && y >= height - 72 && y <= height - 18) {
@@ -331,6 +343,10 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     return true;
   }
   return { resize, setApps, tick, pointer, key, close: () => show(false),
+    setView(view, sample = true) {
+      peoplePlate.material.opacity = view === 'people' ? .8 : .38;
+      peopleMark.visible = view === 'people' && sample;
+    },
     isOpen: () => open,
     openAt(x, z) {
       selectedTile = { x, z };

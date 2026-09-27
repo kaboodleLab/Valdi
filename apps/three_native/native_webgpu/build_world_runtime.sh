@@ -25,10 +25,12 @@ done
 
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 grid_scene="$scene_root/kernel/engine/native-grid-scene.js"
+people_roster="$world_root/../../apps/people/roster.mjs"
 shell_protocol=${SPAOS_SHELL_PROTOCOL_SOURCE:-$scene_root/../shell/src/shared/protocol.ts}
 esbuild_bin=${ESBUILD_BIN:-$node_modules/.bin/esbuild}
 
 [[ -f $grid_scene ]] || fail "WorldOS grid source is missing: $grid_scene"
+[[ -f $people_roster ]] || fail "WorldOS People roster source is missing: $people_roster"
 [[ -f $shell_protocol ]] || fail "SPAOS shell protocol source is missing: $shell_protocol"
 [[ -d $world_root/assets/media ]] || fail "WorldOS media is missing: $world_root/assets/media"
 [[ -d $node_modules/three && -d $node_modules/sharp ]] ||
@@ -54,6 +56,7 @@ NODE_PATH="$node_modules" node "$script_dir/prepare_world_icons.cjs" \
 NODE_PATH="$node_modules" "$esbuild_bin" "$script_dir/three_world_home.js" \
   --bundle --format=iife --platform=browser --target=es2016 \
   --alias:@worldos/native-grid-scene="$grid_scene" \
+  --alias:@worldos/people-roster="$people_roster" \
   --outfile="$stage/world.js"
 NODE_PATH="$node_modules" "$esbuild_bin" "$script_dir/native_spaos_shell.js" \
   --bundle --format=iife --platform=browser --target=es2016 \
