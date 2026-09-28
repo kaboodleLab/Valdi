@@ -14,7 +14,7 @@ command -v "$esbuild_bin" >/dev/null || { echo "esbuild not found: $esbuild_bin"
 [[ ! -e $output_dir && ! -L $output_dir ]] || {
   echo "destination already exists: $output_dir" >&2; exit 2;
 }
-for module in app-catalog installed-apps app-manifests app-roots desktop-entries package-manager-client compositor-client settings; do
+for module in app-catalog installed-apps app-manifests app-roots desktop-entries package-manager-client compositor-client settings verbs; do
   [[ -f $source_dir/main/$module.ts ]] || {
     echo "missing SPAOS shell source: $source_dir/main/$module.ts" >&2; exit 2;
   }
@@ -46,6 +46,7 @@ trap '[[ ! -d ${stage:-} ]] || rm -rf -- "$stage"' EXIT
   --alias:@spaos/package-manager-client="$source_dir/main/package-manager-client.ts" \
   --alias:@spaos/compositor-client="$source_dir/main/compositor-client.ts" \
   --alias:@spaos/settings="$source_dir/main/settings.ts" \
+  --alias:@spaos/verbs="$source_dir/main/verbs.ts" \
   --alias:@spaos/shell-protocol="$source_dir/shared/protocol.ts" \
   --outfile="$stage/native_spaos_shell_controller.cjs"
 [[ -s $stage/probe_spaos_catalog.cjs && -s $stage/native_spaos_shell_controller.cjs ]] || exit 1

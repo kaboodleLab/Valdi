@@ -421,11 +421,22 @@ checks that World becomes ready while Shell stays unready. With
 `--test-host-refresh`, it installs, hides, unhides and removes a temporary XDG
 desktop entry. It checks that the controller republishes each change and World's
 visible app count follows. Both cases passed in isolated Linux sessions.
+With `--test-harness`, the test opens SPAOS's test-only World door, checks that
+the Shell publishes its four floor verbs and each installed app's opener, then
+calls `app.list`, `calculator.open`, `app.move`, `view.show`, and `app.close` through
+the compositor. It verifies Calculator maps on the requested tile and a repeated
+open focuses that copy. This passed with all 28 installed SPAOS apps authenticated.
+The Electron argument must be the exact installed executable path used in the
+Package Manager launch records; a CLI shim changes the launch digest and correctly
+causes the catalog to reject those app presentations.
 `test_native_shell_headless.sh` accepts `SHELL_BUNDLE` for testing a versioned
 Space UI bundle alongside a versioned World bundle.
 
-The controller still omits the Electron shell's voice and harness responders,
-live Verb proxy descriptions, backdrop and room-light
+The controller now answers the Shell-owned floor verbs and no-argument app
+openers from the current authenticated catalog. It refuses an opener carrying
+arguments until app handoff is implemented, so named destinations are not silently
+discarded. The controller still omits app-specific Verb proxies and handoff,
+headless service publication, WorldOS conversation/voice integration, backdrop and room-light
 presentation, and windowed titlebar. The controller refreshes both host
 desktop entries and the Package Manager catalog every minute, and republishes
 when either launcher roster or hidden-app settings change. It reads those

@@ -6,7 +6,9 @@ import { spawn } from 'node:child_process';
 import { CompositorClient } from '@spaos/compositor-client';
 import { PROTOCOL_VERSION } from '@spaos/shell-protocol';
 import { SettingsStore } from '@spaos/settings';
+import { partitionHarnessVerbs, worldVerbBrief } from '@spaos/verbs';
 import { probeSpaosCatalog, scanHostApps } from './probe_spaos_catalog.mjs';
+import { handleNativeShellHarness } from './native_shell_harness.mjs';
 import { requestFromNativeUi } from './native_shell_ui_requests.mjs';
 
 const MAX_UI_LINE = 8192;
@@ -23,17 +25,23 @@ function shellFd() {
   if (!/^\d{1,6}$/.test(raw) || Number(raw) < 3) throw new Error('Invalid SPAOS Shell descriptor');
   return Number(raw);
 }
-function catalogRows(snapshot, hostApps, hidden) {
-  return [...snapshot.apps, ...hostApps].map(entry => ({
-    key: entry.world ? entry.id.slice('world:'.length) : entry.id,
-    name: entry.name,
-    world: !!entry.world,
-    ...(entry.icon ? { icon: entry.icon } : {}),
-    ...(entry.worldIconDeclared ? { worldIconDeclared: true } : {}),
-    ...(entry.worldIcon ? { worldIcon: entry.worldIcon } : {}),
-    ...(entry.wmClass ? { appId: entry.wmClass } : {}),
-    ...(hidden.has(entry.id) ? { hidden: true } : {}),
-  }));
+function catalogRows(snapshot, hostApps, hidden, byApp) {
+  return [...snapshot.apps, ...hostApps].map(entry => {
+    const key = entry.world ? entry.id.slice('world:'.length) : entry.id;
+    const openers = entry.world ? byApp.get(key) ?? [] : [];
+    return {
+      key,
+      name: entry.name,
+      world: !!entry.world,
+      ...(entry.icon ? { icon: entry.icon } : {}),
+      ...(entry.worldIconDeclared ? { worldIconDeclared: true } : {}),
+      ...(entry.worldIcon ? { worldIcon: entry.worldIcon } : {}),
+      ...(entry.wmClass ? { appId: entry.wmClass } : {}),
+      ...(hidden.has(entry.id) ? { hidden: true } : {}),
+      ...(openers.length ? { verbs: openers.map(verb =>
+        worldVerbBrief(verb.name, { ...verb, args: {} })) } : {}),
+    };
+  });
 }
 
 async function run() {
@@ -60,6 +68,8 @@ async function run() {
   let catalog = null;
   const settings = new SettingsStore();
   let hostApps = [];
+  let appViews = [];
+  const harnessStarted = new Map();
   let publishedGeneration = 0;
   let publishedRows = '';
   let instanceName = null;
@@ -93,12 +103,14 @@ async function run() {
       hostApps = host.host;
     }
     if (client.settingsPath) await settings.open(client.settingsPath);
+    const { host, byApp } = partitionHarnessVerbs(snapshot.apps);
     const rows = catalogRows(snapshot, hostApps,
-      new Set(settings.current.launcher.hiddenApps));
+      new Set(settings.current.launcher.hiddenApps), byApp);
     const rowFingerprint = JSON.stringify(rows);
     if (snapshot.generation === publishedGeneration && rowFingerprint === publishedRows) return;
     client.send({ type: 'publish_apps', catalogGeneration: snapshot.generation,
-      verbOwners: snapshot.verbOwners, apps: rows, harness: [] });
+      verbOwners: snapshot.verbOwners, apps: rows,
+      harness: host.map(verb => worldVerbBrief(verb.name, verb)) });
     publishedGeneration = snapshot.generation;
     publishedRows = rowFingerprint;
     log(`published ${snapshot.apps.length} authenticated SPAOS apps, ${hostApps.length} host apps, ` +
@@ -176,8 +188,42 @@ async function run() {
     reportReady();
     refresh().catch(error => log(`catalog refresh failed: ${String(error)}`));
   });
-  client.on('windows', windows => sendUi({ type: 'windows', windows }));
+  client.on('windows', windows => {
+    for (const [app] of harnessStarted) {
+      const entry = catalog?.current.apps.find(value => value.world &&
+        value.id === `world:${app}`);
+      if (entry?.wmClass && client.floor.some(window => window.app_id === entry.wmClass))
+        harnessStarted.delete(app);
+    }
+    sendUi({ type: 'windows', windows });
+  });
   client.on('spaces', spaces => sendUi({ type: 'spaces', spaces }));
+  client.on('app_views', views => { appViews = Array.isArray(views) ? views : []; });
+  client.on('run-harness-verb', p => {
+    try {
+      if (!catalog) throw new Error('Shell catalog has not loaded');
+      const answer = handleNativeShellHarness(p, {
+        apps: catalog.current.apps, spaces: client.spaces, floor: client.floor,
+        views: appViews, starting: harnessStarted,
+      });
+      if (answer) {
+        for (const request of answer.requests) client.send(request);
+        if (answer.startedApp) harnessStarted.set(answer.startedApp, Date.now());
+        client.send({ type: 'harness_result', callId: p.callId, result: answer.result });
+      } else client.send({ type: 'harness_result', callId: p.callId, result: {
+        ok: false, verb: p.verb,
+        error: { code: 'not-found', message: `nothing here answers ${p.verb}`,
+          hint: 'app.list names the apps that are open' }, t: Date.now(),
+      } });
+    } catch (error) {
+      log(`could not answer ${String(p?.verb).slice(0, 80)}: ${String(error)}`);
+      client.send({ type: 'harness_result', callId: p.callId, result: {
+        ok: false, verb: p.verb,
+        error: { code: 'app-unavailable', message: 'Shell catalog is unavailable', hint: '' },
+        t: Date.now(),
+      } });
+    }
+  });
   client.on('output', output => { if (connected) sendUi({ type: 'output', output }); });
   client.on('open-app', (name, at, background) => {
     refresh().then(() => {
