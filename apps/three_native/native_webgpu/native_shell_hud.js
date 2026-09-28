@@ -47,7 +47,7 @@ const GLYPHS = {
 };
 
 function textTexture(THREE, text, color, font) {
-  const letters = String(text).toUpperCase().slice(0, 34);
+  const letters = String(text).toUpperCase().slice(0, 64);
   const glyphs = font?.entry.glyphs;
   const glyphWidth = character => glyphs?.[character]?.advance || 6;
   const width = Math.max(1, font ? [...letters].reduce((sum, c) => sum + glyphWidth(c), 0) :

@@ -27,14 +27,43 @@ if [[ ${SPAOS_AGENT_SERVICE:-0} != 1 || -z ${SPAOS_WORLD_OS_ROOT:-} ]]; then
   exec "$world_binary" --interactive "$VALDI_WORLD_BUNDLE"
 fi
 export WORLD_OS_NATIVE_ROSTER=$(mktemp "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.native-roster.XXXXXXXX")
+agent_dir=$(mktemp -d "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.native-agent.XXXXXXXX")
+chmod 700 "$agent_dir"
+export WORLD_OS_NATIVE_AGENT_SOCKET="$agent_dir/agent.sock"
 node "$script_dir/native_people_roster_bridge.mjs" &
 roster_pid=$!
+for _ in {1..100}; do
+  [[ -S $WORLD_OS_NATIVE_AGENT_SOCKET ]] && break
+  if ! kill -0 "$roster_pid" 2>/dev/null; then
+    echo 'Native World companion exited before its agent socket opened' >&2
+    rm -f "$WORLD_OS_NATIVE_ROSTER"
+    rmdir "$agent_dir"
+    exit 1
+  fi
+  sleep .05
+done
+if [[ ! -S $WORLD_OS_NATIVE_AGENT_SOCKET ]]; then
+  echo 'Native World companion did not open its agent socket' >&2
+  kill -TERM "$roster_pid" 2>/dev/null || true
+  wait "$roster_pid" 2>/dev/null || true
+  rm -f "$WORLD_OS_NATIVE_ROSTER"
+  rmdir "$agent_dir"
+  exit 1
+fi
 "$world_binary" --interactive "$VALDI_WORLD_BUNDLE" &
 world_pid=$!
-trap 'kill -TERM "$world_pid" 2>/dev/null || true' INT TERM
+trap 'kill -TERM "$world_pid" "$roster_pid" 2>/dev/null || true' INT TERM
 status=0
-wait "$world_pid" || status=$?
-kill -TERM "$roster_pid" 2>/dev/null || true
+finished=
+wait -n -p finished "$world_pid" "$roster_pid" || status=$?
+if [[ $finished == "$roster_pid" ]]; then
+  echo 'Native World companion exited before its renderer' >&2
+  status=1
+fi
+kill -TERM "$world_pid" "$roster_pid" 2>/dev/null || true
+wait "$world_pid" 2>/dev/null || true
 wait "$roster_pid" 2>/dev/null || true
 rm -f "$WORLD_OS_NATIVE_ROSTER"
+rm -f "$WORLD_OS_NATIVE_AGENT_SOCKET"
+rmdir "$agent_dir" 2>/dev/null || true
 exit "$status"

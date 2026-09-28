@@ -100,6 +100,21 @@ read-only and separate sessions cannot overwrite each other's roster. The
 renderer shows live members when the provider is online. A provider
 that is off uses the marked sample. The attachment credential never enters
 Hermes or the snapshot file. The companion exits with the native World.
+
+The same companion now carries the production WorldOS mind socket over a
+second private Unix socket. It closes its inherited SPAOS World descriptor;
+only the Valdi host can call the compositor. The native World presents an
+authenticated, generation-bound app catalog to the mind and shows a typed
+conversation field over its Three scene. A mind action returns to the Valdi
+host and crosses SPAOS's World channel, where SPAOS checks the installed owner,
+stamps provenance and applies its normal app Verb policy. Headless service
+calls use SPAOS's separate service call type. The native renderer receives no
+agent attachment token. A dropped mind connection is shown as offline and a
+call that cannot be forwarded receives an explicit error. The typed view is a
+first conversation surface; streaming text layout, voice and the rest of the
+production HUD are still separate parity work. SPAOS currently stamps native
+typed calls as agent calls; person-only commit verbs remain denied until SPAOS
+can attest typed input from its own seat.
 Embedded images are decoded ahead of time into RGBA files because Hermes has no browser
 image decoder. `GLTFLoader` still parses geometry, materials and transforms.
 The asset builder repacks each native GLB with valid one-pixel embedded images
@@ -357,7 +372,7 @@ Hermes runtime, rather than a Valdi custom view or a full port of `World.html`.
 Its volume reader covers layout and app presence; SPAOS remains the authority
 for spaces, previews and app input. The native shell currently has the core
 floor, previews, Back, clock and launcher. Production jar shading, the rest of
-the WorldOS HUD, 3D launcher lattice, chat, voice, notifications, and all app
+the WorldOS HUD, 3D launcher lattice, full chat presentation, voice, notifications, and all app
 surfaces remain separate work.
 
 ### Native SPAOS Shell capability slice
@@ -432,6 +447,14 @@ Calculator receives `calculator.evaluate` after it registers its Verb, a second
 call uses its live channel, and the headless System Info worker answers
 `system.machine`. The controller publishes the one authenticated service with
 the same catalog generation as the app roster. Both handoffs passed on Linux.
+With `--test-agent-call`, a private Unix socket stands in for the mind, waits
+for the renderer's authenticated catalog, calls `app.list` through native
+World and SPAOS Shell, and sends a reply back to the renderer. With
+`--test-agent --world-runner run_spaos_world.sh`, a separate temporary Home
+and State volume starts a real agent service and verifies its authenticated
+World handshake. Both passed on Linux. The temporary service has no model key;
+the live tty2 service reported Hermes ready and answered a typed app question
+through the native chat field.
 The Electron argument must be the exact installed executable path used in the
 Package Manager launch records; a CLI shim changes the launch digest and correctly
 causes the catalog to reject those app presentations.
@@ -443,7 +466,8 @@ the current authenticated catalog. It publishes installed app and service Verb
 metadata, starts a stopped owner from its digest-bound record, waits for its
 registration, and re-enters the compositor's invoke path so the compositor
 applies its usual provenance and user-go policy. A call that times out receives
-an explicit refusal. WorldOS conversation/voice integration, backdrop and
+an explicit refusal. Native WorldOS now has a typed mind transport and a
+bounded compositor Verb return path. Full conversation and voice presentation, backdrop and
 room-light presentation, and windowed titlebar remain. The controller refreshes both host
 desktop entries and the Package Manager catalog every minute, and republishes
 when either launcher roster or hidden-app settings change. It reads those

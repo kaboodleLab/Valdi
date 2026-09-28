@@ -60,6 +60,47 @@ def wait_for_log(process: subprocess.Popen, log_path: Path, pattern: str,
     raise TimeoutError(f"SPAOS log did not reach expected {pattern}")
 
 
+def probe_native_agent_call(listener: socket.socket, log_path: Path) -> None:
+    """Drive one observe verb through Hermes, the World channel and SPAOS."""
+    listener.settimeout(15)
+    with listener.accept()[0] as native:
+        native.settimeout(30)
+        stream = native.makefile("r")
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            event = json.loads(stream.readline())
+            if event.get("type") != "catalog":
+                continue
+            if not any(verb.get("name") == "app.list"
+                       for verb in event.get("harness", [])):
+                raise RuntimeError(f"Native World published no app.list verb: {event}")
+            break
+        else:
+            raise TimeoutError("Native World did not publish its SPAOS catalog")
+        native.sendall((json.dumps({"type": "agent_call", "call": {
+            "callId": "native-agent-probe", "verb": "app.list", "args": {}
+        }}) + "\n").encode())
+        while time.monotonic() < deadline:
+            event = json.loads(stream.readline())
+            if event.get("type") != "result" or event.get("callId") != "native-agent-probe":
+                continue
+            if event.get("result", {}).get("ok") is not True:
+                raise RuntimeError(f"Native SPAOS app.list returned an error: {event}")
+            native.sendall((json.dumps({"type": "agent_frame", "frame": {
+                "t": "say", "text": "Native World agent probe answered"
+            }}) + "\n").encode())
+            reply_deadline = time.monotonic() + 10
+            while time.monotonic() < reply_deadline:
+                if "WorldOS mind replied: Native World agent probe answered" in \
+                        log_path.read_text(errors="replace"):
+                    print("Native WorldOS agent call passed: app.list -> SPAOS Shell -> result; "
+                          "mind reply -> native renderer")
+                    return
+                time.sleep(.1)
+            raise TimeoutError("Native World did not present the agent reply")
+        raise TimeoutError("Native World did not return SPAOS's app.list result")
+
+
 def probe_harness(door: Path) -> None:
     deadline = time.monotonic() + 20
     while not door.is_socket() and time.monotonic() < deadline:
@@ -243,10 +284,18 @@ def main() -> None:
                         help="call Shell-owned verbs through SPAOS's isolated World test door")
     parser.add_argument("--test-handoff", action="store_true",
                         help="call a stopped SPAOS app Verb through native Shell handoff")
+    parser.add_argument("--test-agent", action="store_true",
+                        help="verify the native World attaches to an isolated WorldOS mind")
+    parser.add_argument("--test-agent-call", action="store_true",
+                        help="exercise one agent call through native World and SPAOS")
+    parser.add_argument("--world-runner", type=Path,
+                        help="run_spaos_world.sh for the isolated agent test")
     args = parser.parse_args()
     if sum((args.expect_shell_unready, args.test_host_refresh, args.test_harness,
-            args.test_handoff)) > 1:
+            args.test_handoff, args.test_agent, args.test_agent_call)) > 1:
         parser.error("choose one Shell lifecycle test mode")
+    if args.test_agent and (not args.world_runner or not args.world_runner.is_file()):
+        parser.error("--test-agent requires --world-runner")
     runtime_parent = os.environ.get("XDG_RUNTIME_DIR")
     host_display = os.environ.get("WAYLAND_DISPLAY")
     node = shutil.which("node")
@@ -264,9 +313,11 @@ def main() -> None:
         endpoint = runtime / "lifecycle.sock"
         token = secrets.token_urlsafe(48)
         world_wrapper = runtime / "run-world.sh"
+        world_command = args.world_runner.resolve() if args.test_agent else args.native.resolve()
         world_wrapper.write_text("#!/usr/bin/env bash\nset -euo pipefail\n"
-            f"exec {shlex.quote(str(args.native.resolve()))} --interactive "
-            f"{shlex.quote(str(args.world_bundle.resolve()))}\n")
+            + (f"exec {shlex.quote(str(world_command))}\n" if args.test_agent else
+               f"exec {shlex.quote(str(world_command))} --interactive "
+               f"{shlex.quote(str(args.world_bundle.resolve()))}\n"))
         world_wrapper.chmod(0o700)
         shell_wrapper = runtime / "run-shell.sh"
         shell_wrapper.write_text("#!/usr/bin/env bash\nset -euo pipefail\n"
@@ -291,6 +342,13 @@ def main() -> None:
             environment["VALDI_SHELL_CATALOG_POLL_MS"] = "1000"
         if args.test_harness or args.test_handoff:
             environment["SPAOS_CHANNEL_DOOR"] = "1"
+        agent_listener = None
+        if args.test_agent_call:
+            agent_listener = socket.socket(socket.AF_UNIX)
+            agent_socket = runtime / "agent.sock"
+            agent_listener.bind(str(agent_socket))
+            agent_listener.listen(1)
+            environment["WORLD_OS_NATIVE_AGENT_SOCKET"] = str(agent_socket)
         appd = args.desktop / "target/release/spaos-appd"
         if appd.is_file():
             environment["SPAOS_APPD_BIN"] = str(appd)
@@ -298,6 +356,30 @@ def main() -> None:
             environment["WORLD_OS_NATIVE_STATE"] = str(args.state.resolve())
         else:
             environment.pop("WORLD_OS_NATIVE_STATE", None)
+        service = None
+        service_log = None
+        if args.test_agent:
+            volume = runtime / "volume"
+            (volume / "Home").mkdir(parents=True)
+            (volume / "State").mkdir()
+            state = volume / "State" / "world.json"
+            state.write_text(json.dumps({"rev": 0, "layout": {}, "props": []}))
+            environment.update(
+                SPAOS_AGENT_SERVICE="1",
+                SPAOS_WORLD_OS_ROOT=str((args.desktop / "world_os").resolve()),
+                WORLD_OS_NATIVE_STATE=str(state),
+                WORLD_HOME=str(volume / "Home"),
+                WORLD_STATE_DIR=str(volume / "State"),
+                VALDI_WORLD_BINARY=str(args.native.resolve()),
+                VALDI_WORLD_BUNDLE=str(args.world_bundle.resolve()),
+            )
+            service_entry = args.desktop.parent / "agent/world/services/agent-service.mjs"
+            if not service_entry.is_file():
+                parser.error(f"isolated agent service missing: {service_entry}")
+            service_log = (runtime / "agent-service.log").open("wb")
+            service = subprocess.Popen([node, str(service_entry), "--home", str(volume / "Home"),
+                "--port", "0"], env=environment, stdin=subprocess.DEVNULL,
+                stdout=service_log, stderr=subprocess.STDOUT, start_new_session=True)
         socket_name = f"wayland-valdi-shell-{os.getpid()}-{secrets.token_hex(3)}"
         log_path = runtime / "session.log"
         with log_path.open("wb") as log:
@@ -329,6 +411,24 @@ def main() -> None:
                 before = wait_for_status(process, endpoint, token,
                     lambda status: status["targets"]["world"]["ready"] and
                     status["targets"]["shell"]["ready"])
+                if args.test_agent_call:
+                    probe_native_agent_call(agent_listener, log_path)
+                    return
+                if args.test_agent:
+                    deadline = time.monotonic() + 90
+                    while time.monotonic() < deadline:
+                        output = log_path.read_text(errors="replace")
+                        if service.poll() is not None:
+                            raise RuntimeError("isolated WorldOS mind exited: " +
+                                (runtime / "agent-service.log").read_text(errors="replace")[-2500:])
+                        if "WorldOS mind hello acknowledged" in output and \
+                                "published " in output and "installed app and floor verbs" in output:
+                            print("Native WorldOS mind handshake passed through isolated SPAOS service")
+                            print(next(line for line in output.splitlines()
+                                if "WorldOS mind hello acknowledged" in line))
+                            return
+                        time.sleep(.25)
+                    raise TimeoutError("native World did not publish a catalog and receive mind hello")
                 if args.test_harness:
                     probe_harness(Path(runtime_parent) / f"{socket_name}.apps" / "world.sock")
                     print("SPAOS native Shell harness passed: list, open, move, show, focus and close Calculator")
@@ -414,6 +514,16 @@ def main() -> None:
                     except subprocess.TimeoutExpired:
                         os.killpg(process.pid, signal.SIGKILL)
                         process.wait(timeout=5)
+                if service and service.poll() is None:
+                    service.terminate()
+                    try:
+                        service.wait(timeout=20)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(service.pid, signal.SIGKILL)
+                if service_log:
+                    service_log.close()
+                if agent_listener:
+                    agent_listener.close()
         for leftover in (Path(runtime_parent) / socket_name,
                          Path(runtime_parent) / f"{socket_name}.lock"):
             leftover.unlink(missing_ok=True)

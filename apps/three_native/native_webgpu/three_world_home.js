@@ -3,6 +3,7 @@ import * as tsl from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
+import { createNativeConversationHud } from './native_conversation_hud.js';
 import { createNativePeopleScene } from './native_people_scene.js';
 import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
@@ -349,6 +350,7 @@ async function render() {
     camera.bottom = -extent;
     camera.updateProjectionMatrix();
     hud.resize(surfaceWidth, surfaceHeight, extent);
+    conversation.resize(surfaceWidth, surfaceHeight, extent);
     hud.setView(open ? 'people' : 'home', peopleSource === 'sample');
     people.faceCamera();
   }
@@ -373,6 +375,71 @@ async function render() {
     },
   });
   hud.resize(surfaceWidth, surfaceHeight, extent);
+  const sendAgent = value => typeof __nativeAgentSend === 'function' &&
+    __nativeAgentSend(JSON.stringify(value));
+  const conversation = createNativeConversationHud({ THREE, scene, camera, makeText,
+    onSubmit: text => {
+      const inputId = `native-${Date.now()}-${Math.floor(Math.random() * 1e9)}`;
+      return sendAgent({ type: 'utterance', text, inputId }) ? inputId : null;
+    },
+  });
+  conversation.resize(surfaceWidth, surfaceHeight, extent);
+  const agentVerbs = new Set();
+  const agentServices = new Set();
+  const pendingAgentCalls = new Set();
+  let seenAgentStatus = '';
+  function pollAgentChannel() {
+    if (typeof __nativeAgentPoll !== 'function') return;
+    const incoming = __nativeAgentPoll();
+    if (!incoming) {
+      if (typeof __nativeAgentConnected === 'function' && !__nativeAgentConnected())
+        conversation.setReady(false);
+      return;
+    }
+    for (const line of incoming.split('\n')) {
+      if (!line) continue;
+      let message;
+      try { message = JSON.parse(line); } catch { continue; }
+      if (message?.type === 'agent_status') {
+        conversation.setReady(message.ready === true);
+        const status = `${message.connected === true ? 'connected' : 'disconnected'}/` +
+          `${message.ready === true ? 'ready' : 'offline'}`;
+        if (status !== seenAgentStatus) {
+          seenAgentStatus = status;
+          __webgpuSurfaceStage(`WorldOS mind status: ${status}`);
+        }
+      } else if (message?.type === 'agent_frame') {
+        if (message.frame?.t === 'say' && typeof message.frame.text === 'string') {
+          conversation.say(message.frame.text);
+          __webgpuSurfaceStage(`WorldOS mind replied: ${message.frame.text.slice(0, 160)}`);
+        } else if (message.frame?.t === 'say-delta') {
+          conversation.delta(message.frame.delta, message.frame.inputId);
+        } else if (message.frame?.t === 'status') {
+          conversation.status(message.frame.state);
+        }
+      } else if (message?.type === 'agent_call') {
+        const call = message.call;
+        if (!call || typeof call.callId !== 'string' || typeof call.verb !== 'string') continue;
+        const result = error => sendAgent({ type: 'result', callId: call.callId,
+          result: { ok: false, verb: call.verb, error: { code: 'not-found', message: error } } });
+        if (!agentVerbs.has(call.verb) && !agentServices.has(call.verb)) {
+          result('This verb is not in the native World catalog');
+          continue;
+        }
+        let sent = false;
+        try {
+          sent = typeof __nativeWorldCall === 'function' &&
+            __nativeWorldCall(call.verb, JSON.stringify(call.args || {}),
+              call.callId, agentServices.has(call.verb));
+        } catch (error) {
+          result(String(error));
+          continue;
+        }
+        if (sent) pendingAgentCalls.add(call.callId);
+        else result('The SPAOS World channel could not send this verb');
+      }
+    }
+  }
   if (globalThis.__nativeWorldStartView === 'people') pollPeopleRoster();
   if (globalThis.__nativeWorldStartView === 'people') setPeopleOpen(true);
   function isCell(value) {
@@ -397,10 +464,20 @@ async function render() {
       if (lifecycle.onMessage(message)) continue;
       if (message.type === 'apps' && Array.isArray(message.apps)) {
         const signature = JSON.stringify(message.apps.map(app => [
-          app.key, app.name, app.hidden, app.world, app.icon,
-        ]));
+          app.key, app.name, app.hidden, app.world, app.icon, app.verbs,
+        ]).concat([message.harness, message.catalogGeneration]));
         if (signature === seenCatalogSignature) continue;
         seenCatalogSignature = signature;
+        agentVerbs.clear();
+        for (const app of message.apps) {
+          if (app?.world && Array.isArray(app.verbs))
+            for (const verb of app.verbs) if (typeof verb?.name === 'string')
+              agentVerbs.add(verb.name);
+        }
+        for (const verb of message.harness || [])
+          if (typeof verb?.name === 'string') agentVerbs.add(verb.name);
+        sendAgent({ type: 'catalog', apps: message.apps,
+          harness: message.harness || [], generation: message.catalogGeneration });
         nativeApps.clear();
         for (const app of message.apps) {
           if (typeof app?.key === 'string' && !app.hidden) nativeApps.set(app.key, app);
@@ -413,6 +490,14 @@ async function render() {
         channelFloor = { spaces: message.spaces };
         ++channelFloorRevision;
         floorChanged = true;
+      } else if (message.type === 'services' && Array.isArray(message.services)) {
+        agentServices.clear();
+        for (const service of message.services)
+          for (const verb of service?.verbs || [])
+            if (typeof verb?.name === 'string') agentServices.add(verb.name);
+      } else if (message.type === 'call_result' &&
+                 pendingAgentCalls.delete(message.callId)) {
+        sendAgent({ type: 'result', callId: message.callId, result: message.result });
       }
     }
     return floorChanged;
@@ -757,6 +842,7 @@ async function render() {
   let waveX = 0, waveZ = 0, waveStart = animationStart;
   globalThis.__nativeStop = () => { stopped = true; };
   globalThis.__worldBack = () => {
+    if (conversation.blur()) return;
     if (hud.isOpen()) { hud.close(); return; }
     if (people.isOpen()) { setPeopleOpen(false); return; }
     if (typeof __nativeWorldLeave === 'function' && __nativeWorldLeave()) {
@@ -785,11 +871,13 @@ async function render() {
     camera.bottom = -extent;
     camera.updateProjectionMatrix();
     hud.resize(width, height, extent);
+    conversation.resize(width, height, extent);
     __webgpuSurfaceStage(`WorldOS surface resized: ${width}x${height}`);
   };
   globalThis.__worldNavigate = (kind, amount = 1) => {
     if (kind === 'restart') { lifecycle.restart(); return; }
     if (hud.key(kind === 'recenter' ? 'home' : kind)) return;
+    if (conversation.key(kind)) return;
     if (people.isOpen()) {
       if (kind === 'recenter') setPeopleOpen(false);
       return;
@@ -809,6 +897,7 @@ async function render() {
       camera.bottom = -extent;
       camera.updateProjectionMatrix();
       hud.resize(surfaceWidth, surfaceHeight, extent);
+      conversation.resize(surfaceWidth, surfaceHeight, extent);
     } else {
       const forward = new THREE.Vector3(-cameraOffset.x, 0, -cameraOffset.z).normalize();
       const right = new THREE.Vector3().crossVectors(forward, camera.up).normalize();
@@ -828,12 +917,13 @@ async function render() {
     }
     cameraManuallyPlaced = true;
   };
-  globalThis.__worldTextInput = text => hud.text(text);
+  globalThis.__worldTextInput = text => hud.text(text) || conversation.text(text);
   globalThis.__worldPointer = (x, y, clicked) => {
     if (clicked && frameTiming) pendingInputs.push({
       sequence: ++inputSequence, at: performance.now(), afterFrame: frame,
     });
     if (hud.pointer(x, y, clicked) || hud.isOpen()) return;
+    if (conversation.pointer(x, y, clicked)) return;
     if (people.isOpen()) {
       if (!clicked) return;
       pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
@@ -882,6 +972,7 @@ async function render() {
     people.tick(Math.min(.1, (interval ?? 16) / 1000));
     if (frame % 60 === 0) pollPeopleRoster();
     const floorChanged = pollWorldChannel();
+    pollAgentChannel();
     if (floorChanged || pendingIconRefresh || frame % 60 === 0 ||
         (pendingPreview && startedAt >= nextPreviewRetryAt))
       applyLiveState(frame % 60 === 0);

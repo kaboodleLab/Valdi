@@ -163,7 +163,8 @@ std::shared_ptr<NativeChannel> channelFromEnvironment(const char* name,
 }
 
 std::shared_ptr<NativeChannel> channelFromLocalSocket(const char* raw,
-                                                     size_t maxLine, size_t maxOutbox) {
+                                                     size_t maxLine, size_t maxOutbox,
+                                                     const char* tokenName = nullptr) {
     sockaddr_un address{};
     if (!raw || raw[0] != '/' || std::strlen(raw) >= sizeof(address.sun_path)) return {};
     const int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
@@ -179,23 +180,34 @@ std::shared_ptr<NativeChannel> channelFromLocalSocket(const char* raw,
         close(fd);
         return {};
     }
-    const char* token = std::getenv("VALDI_SHELL_UI_TOKEN");
-    if (!token || std::strlen(token) != 64 ||
-        !std::all_of(token, token + 64, [](unsigned char c) { return std::isxdigit(c); })) {
-        close(fd);
-        return {};
-    }
     auto channel = std::make_shared<NativeChannel>(fd, maxLine, maxOutbox);
-    if (!channel->sendLine(std::string("{\"type\":\"ui_auth\",\"token\":\"") + token + "\"}"))
-        return {};
+    if (tokenName) {
+        const char* token = std::getenv(tokenName);
+        if (!token || std::strlen(token) != 64 ||
+            !std::all_of(token, token + 64, [](unsigned char c) { return std::isxdigit(c); }))
+            return {};
+        if (!channel->sendLine(std::string("{\"type\":\"ui_auth\",\"token\":\"") + token + "\"}"))
+            return {};
+    }
     return channel;
 }
 
 std::shared_ptr<NativeChannel> worldChannelFromEnvironment() {
-    auto channel = channelFromEnvironment("SPAOS_APP_CHANNEL_FD", 4096, 16384);
+    auto channel = channelFromEnvironment("SPAOS_APP_CHANNEL_FD", 256 * 1024, 1024 * 1024);
     if (!channel) return {};
     channel->sendLine("{\"type\":\"hello\",\"protocol\":1}");
     return channel;
+}
+
+std::string worldCallName(facebook::jsi::Runtime& js, const facebook::jsi::Value& value,
+                          const char* kind) {
+    if (!value.isString()) throw facebook::jsi::JSError(js, kind);
+    const auto name = value.getString(js).utf8(js);
+    if (name.empty() || name.size() > 128 ||
+        !std::all_of(name.begin(), name.end(), [](unsigned char c) {
+            return std::isalnum(c) || c == '-' || c == '_' || c == '.' || c == ':';
+        })) throw facebook::jsi::JSError(js, kind);
+    return name;
 }
 
 int worldCoordinate(facebook::jsi::Runtime& js, const facebook::jsi::Value& value) {
@@ -310,11 +322,15 @@ int main(int argc, char** argv) {
     auto result = std::make_shared<ProbeResult>();
     auto worldChannel = script.empty() || shellClient
         ? std::shared_ptr<NativeChannel>() : worldChannelFromEnvironment();
+    auto agentChannel = script.empty() || shellClient
+        ? std::shared_ptr<NativeChannel>()
+        : channelFromLocalSocket(std::getenv("WORLD_OS_NATIVE_AGENT_SOCKET"),
+                                 256 * 1024, 1024 * 1024);
     auto shellChannel = shellClient
         ? directShell
             ? channelFromEnvironment("SPAOS_SHELL_CHANNEL_FD", 256 * 1024, 1024 * 1024)
             : channelFromLocalSocket(std::getenv("VALDI_SHELL_UI_SOCKET"),
-                                     256 * 1024, 1024 * 1024)
+                                     256 * 1024, 1024 * 1024, "VALDI_SHELL_UI_TOKEN")
         : std::shared_ptr<NativeChannel>();
     if (shellClient && !shellChannel) {
         std::fprintf(stderr, "Cannot open SPAOS shell channel\n");
@@ -457,6 +473,50 @@ int main(int argc, char** argv) {
                             ",\"z\":" + std::to_string(z) + "}}"));
                     });
                 jsi->global().setProperty(*jsi, "__nativeWorldOpen", std::move(openWorld));
+                auto callWorld = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldCall"), 4,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 4 || !args[1].isString() || !args[3].isBool())
+                            throw facebook::jsi::JSError(js, "Expected WorldOS verb, arguments, call id and service flag");
+                        const auto verb = worldCallName(js, args[0], "Invalid WorldOS verb");
+                        const auto id = worldCallName(js, args[2], "Invalid WorldOS call id");
+                        const auto payload = args[1].getString(js).utf8(js);
+                        if (payload.size() > 128 * 1024 || payload.empty() || payload.front() != '{' ||
+                            payload.back() != '}' || payload.find('\n') != std::string::npos ||
+                            payload.find('\r') != std::string::npos)
+                            throw facebook::jsi::JSError(js, "Invalid WorldOS verb arguments");
+                        const char* type = args[3].getBool() ? "call_headless" : "call";
+                        return facebook::jsi::Value(worldChannel->sendLine(
+                            std::string("{\"type\":\"") + type + "\",\"verb\":\"" + verb +
+                            "\",\"args\":" + payload + ",\"callId\":\"" + id + "\"}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldCall", std::move(callWorld));
+            }
+            if (agentChannel) {
+                auto pollAgent = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeAgentPoll"), 0,
+                    [agentChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        return facebook::jsi::String::createFromUtf8(js, agentChannel->poll());
+                    });
+                jsi->global().setProperty(*jsi, "__nativeAgentPoll", std::move(pollAgent));
+                auto sendAgent = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeAgentSend"), 1,
+                    [agentChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 1 || !args[0].isString())
+                            throw facebook::jsi::JSError(js, "Expected one native agent frame");
+                        return facebook::jsi::Value(agentChannel->sendLine(args[0].getString(js).utf8(js)));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeAgentSend", std::move(sendAgent));
+                auto agentConnected = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeAgentConnected"), 0,
+                    [agentChannel](facebook::jsi::Runtime&, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        return facebook::jsi::Value(agentChannel->isOpen());
+                    });
+                jsi->global().setProperty(*jsi, "__nativeAgentConnected", std::move(agentConnected));
             }
             if (shellChannel) {
                 auto pollShell = facebook::jsi::Function::createFromHostFunction(
