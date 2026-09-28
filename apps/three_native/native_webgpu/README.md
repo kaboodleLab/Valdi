@@ -80,7 +80,11 @@ the production jar's lathe profile and tilt/spin hierarchy. Its landed pose
 and blue contact shadow use the shared WorldOS calculation and material. The
 native tile top is at local `TILE.H`; the adapter converts the browser pose
 from `WORLD_HOME.gridY` to that local datum before placing both meshes. The
-default glass uses a Three physical material; prefixing the bundle with
+native key and hemisphere fill follow the production clock table in
+`world-daylight.js`; the grid's painted sun grade remains a separate pass. The
+jar's warm night pool uses the shared `world-home-composition.js` lamp law on
+the grid shader and a local point light, both seated on the native tile datum.
+The default glass uses a Three physical material; prefixing the bundle with
 `globalThis.__nativeWorldJarMaterial='authored';` selects WorldOS's shared
 `world-jar-materials.js` glass shader through its `home-material.js` graphics adapter.
 That mode captures the background at half resolution and refreshes it on
@@ -182,7 +186,8 @@ source. The Linux demo uses SPAOS branch `codex/world-native-scene-contract`;
 that scene factory has not landed in SPAOS main. The builder imports WorldOS
 `world-jar-materials.js` and `home-material.js` too. If those modules are staged
 outside `WORLD_SCENE_ROOT`, set `WORLD_JAR_MATERIALS_SOURCE` and
-`WORLD_HOME_MATERIAL_SOURCE` to their paths.
+`WORLD_HOME_MATERIAL_SOURCE` to their paths. The builder also imports
+`world-daylight.js`; set `WORLD_DAYLIGHT_SOURCE` when it is staged separately.
 The shell bundle also reads the sibling SPAOS shell protocol
 source so its version matches the compositor. If the scene was staged without
 that sibling tree, set `SPAOS_SHELL_PROTOCOL_SOURCE` to the matching

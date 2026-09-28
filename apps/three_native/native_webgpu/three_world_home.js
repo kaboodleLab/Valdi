@@ -3,7 +3,8 @@ import * as tsl from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
 import { WORLD_HOME, createWorldJarRig, solveWorldHomeFrame,
-  solveWorldJarPose, worldCameraPosition } from '@worldos/world-home-composition';
+  solveWorldJarPose, solveWorldJarNightLamp, worldCameraPosition }
+  from '@worldos/world-home-composition';
 import { createWorldJarGlassMaterial, createWorldJarContactShadowMaterial }
   from '@worldos/world-jar-materials';
 import { createHomeMaterial } from '@worldos/home-material';
@@ -15,6 +16,7 @@ import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
 import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
 import { worldSunGrade } from './native_world_sun.mjs';
+import { solveWorldKeyLight } from '@worldos/world-daylight';
 import { createNativeArrivalReveal } from './native_world_arrival.mjs';
 import { beginReturnFromFloor, canReleaseReturn } from './native_world_return.mjs';
 
@@ -104,11 +106,26 @@ async function render() {
   renderer.toneMapping = THREE.NoToneMapping;
   const homeBackground = meadow ? new THREE.Color(0x13210e) : core.COL_BG;
   scene.background = homeBackground;
-  const ambient = new THREE.AmbientLight(0xffffff, 1.2);
-  scene.add(ambient);
-  const light = new THREE.DirectionalLight(0xffffff, 2.5);
-  light.position.set(-2, 3, 4);
+  const fill = new THREE.HemisphereLight(0xffffff, 0xe8e6e2, 0);
+  scene.add(fill);
+  const light = new THREE.DirectionalLight(0xfff4e2, 0);
+  light.name = 'tileRigKey';
+  const keyColorB = new THREE.Color();
   scene.add(light);
+  const jarLamp = new THREE.PointLight(0xffffff, 0, 1.7, 2);
+  jarLamp.color.setRGB(1, .8, .55);
+  jarLamp.position.set(1, core.TILE.H + .30, 0);
+  homeRoot.add(jarLamp);
+  uniforms.uLampPos.value[1].set(1, 0);
+  uniforms.uLampCol.value[1].copy(jarLamp.color);
+  let jarLampNight = 0;
+  function applyJarLamp() {
+    const lamp = solveWorldJarNightLamp({ nightK: jarLampNight });
+    const amount = jarLamp.visible ? lamp.amount : 0;
+    uniforms.uLampAmt.value[1] = amount;
+    uniforms.uLampRad.value[1] = lamp.radius;
+    jarLamp.intensity = amount * 1.2;
+  }
 
   const liveShell = typeof __nativeReadShellState === 'function' ||
     typeof __nativeReadShellFloor === 'function' || typeof __nativeWorldPoll === 'function';
@@ -130,6 +147,9 @@ async function render() {
     const hour = globalThis.__nativeWorldHour ??
       now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
     const grade = worldSunGrade(hour, camera.position.x, camera.position.z);
+    const key = solveWorldKeyLight(hour, core.TILE);
+    jarLampNight = grade.night;
+    applyJarLamp();
     uniforms.uNight.value = grade.night;
     uniforms.uSunLum.value = grade.lum;
     uniforms.uSunAmt.value = grade.amount;
@@ -143,11 +163,12 @@ async function render() {
     uniforms.uSunGrid.value.set(...grade.sunGrid);
     uniforms.uSunSplit.value = grade.split;
     uniforms.uSunPool.value = grade.pool;
-    // Three's meadow meshes use native lights; the grid receives the exact
-    // WorldOS grade above. Keep the meadow legible throughout the night.
-    ambient.intensity = 1.0 + .2 * (1 - grade.night);
-    light.intensity = 1.8 + .7 * (1 - grade.night);
-    light.color.setRGB(...grade.tintB).multiplyScalar(1.3);
+    // The authored room rig follows the same day keys as browser World.
+    // The painted grid continues to use its separate sun-grade uniforms.
+    light.intensity = key.intensity;
+    light.position.set(...key.direction).multiplyScalar(20);
+    light.color.setHex(key.colorA).lerp(keyColorB.setHex(key.colorB), key.colorMix);
+    fill.intensity = .6 * Math.min(1, Math.max(0, key.intensity / 3));
     if (meadow) homeBackground.setRGB(
       .013 + .016 * (1 - grade.night),
       .023 + .043 * (1 - grade.night),
@@ -820,11 +841,15 @@ async function render() {
     jarRig.tiltGroup.visible = tileByName.get('jar').visible =
       Number.isInteger(jarX) && Number.isInteger(jarZ);
     jarShadow.visible = jarRig.tiltGroup.visible;
+    jarLamp.visible = jarRig.tiltGroup.visible;
     if (jarRig.tiltGroup.visible) {
       jarRig.tiltGroup.position.set(jarX, landedJarPose.y + nativeGroundOffset, jarZ);
       jarShadow.position.set(jarX, landedJarPose.shadowY + nativeGroundOffset, jarZ);
+      jarLamp.position.set(jarX, core.TILE.H + .30, jarZ);
+      uniforms.uLampPos.value[1].set(jarX, jarZ);
       tileByName.get('jar').position.set(jarX, 0, jarZ);
     }
+    applyJarLamp();
     const allCells = [];
     const allCellKeys = new Set();
     const includeCell = (x, z) => {

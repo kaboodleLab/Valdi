@@ -27,6 +27,7 @@ script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 grid_scene="$scene_root/kernel/engine/native-grid-scene.js"
 home_composition=${WORLD_HOME_COMPOSITION_SOURCE:-$scene_root/kernel/engine/world-home-composition.js}
 jar_materials=${WORLD_JAR_MATERIALS_SOURCE:-$scene_root/kernel/engine/world-jar-materials.js}
+daylight=${WORLD_DAYLIGHT_SOURCE:-$scene_root/kernel/engine/world-daylight.js}
 home_material=${WORLD_HOME_MATERIAL_SOURCE:-$scene_root/kernel/engine/home-material.js}
 people_roster="$world_root/../../apps/people/roster.mjs"
 character_world="$world_root/kernel/engine/character-world.js"
@@ -36,6 +37,7 @@ esbuild_bin=${ESBUILD_BIN:-$node_modules/.bin/esbuild}
 [[ -f $grid_scene ]] || fail "WorldOS grid source is missing: $grid_scene"
 [[ -f $home_composition ]] || fail "WorldOS home composition is missing: $home_composition"
 [[ -f $jar_materials ]] || fail "WorldOS jar materials are missing: $jar_materials"
+[[ -f $daylight ]] || fail "WorldOS daylight source is missing: $daylight"
 [[ -f $home_material ]] || fail "WorldOS home material is missing: $home_material"
 [[ -f $people_roster ]] || fail "WorldOS People roster source is missing: $people_roster"
 [[ -f $character_world ]] || fail "WorldOS character simulation source is missing: $character_world"
@@ -66,6 +68,7 @@ NODE_PATH="$node_modules" "$esbuild_bin" "$script_dir/three_world_home.js" \
   --alias:@worldos/native-grid-scene="$grid_scene" \
   --alias:@worldos/world-home-composition="$home_composition" \
   --alias:@worldos/world-jar-materials="$jar_materials" \
+  --alias:@worldos/world-daylight="$daylight" \
   --alias:@worldos/home-material="$home_material" \
   --alias:@worldos/people-roster="$people_roster" \
   --alias:@worldos/character-world="$character_world" \
