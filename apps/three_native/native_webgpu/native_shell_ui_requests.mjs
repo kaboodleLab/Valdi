@@ -1,4 +1,4 @@
-const DOCK_HEIGHT = 64;
+import { DOCK_HEIGHT, nativeDockLayout } from './native_space_dock.mjs';
 
 // The renderer's socket is deliberately less powerful than SPAOS's Shell
 // capability. Reconstruct each allowed request from a compositor snapshot.
@@ -9,11 +9,13 @@ export function requestFromNativeUi(value, { output, windows, spaces }) {
       return value.height === DOCK_HEIGHT
         ? { type: 'reserve_space_ui', height: DOCK_HEIGHT } : null;
     case 'set_dock_rect':
-      return output && value.home === false && value.x === 0 &&
-        value.y === output.height - DOCK_HEIGHT && value.w === output.width &&
-        value.h === DOCK_HEIGHT
-        ? { type: 'set_dock_rect', x: 0, y: output.height - DOCK_HEIGHT,
-          w: output.width, h: DOCK_HEIGHT, home: false } : null;
+      {
+        const dock = nativeDockLayout(output, windows);
+        return dock && value.home === true && value.x === dock.x &&
+          value.y === dock.y && value.w === dock.w && value.h === dock.h
+          ? { type: 'set_dock_rect', x: dock.x, y: dock.y,
+            w: dock.w, h: dock.h, home: true } : null;
+      }
     case 'focus':
     case 'close':
       return Number.isSafeInteger(value.id) && windows.some(window => window.id === value.id)

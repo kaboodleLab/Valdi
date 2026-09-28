@@ -136,6 +136,6 @@ def pixel(x, y):
     offset = (y * width + x) * 3
     return tuple(pixels[offset:offset + 3])
 assert pixel(width // 2, height // 2) == (0, 0, 0)
-assert pixel(width // 2, height - 32) != (0, 0, 0)
+assert pixel(width * 3 // 4, height - 43) != (0, 0, 0)
 print(f'native shell GPU frame: {width}x{height}, transparent field and visible dock')
 PY

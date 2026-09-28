@@ -391,10 +391,15 @@ surfaces remain separate work.
 ### Native SPAOS Shell capability slice
 
 `native_spaos_shell.js` is a separate Valdi/Hermes/Three/Dawn Space UI. It
-maps the transparent `spaos-space-ui` Wayland surface and draws a 64-pixel
-native taskbar. World, space, and active-window buttons request compositor
-actions. SPAOS still owns window management and composition. The World client
-remains a distinct process and channel.
+maps the transparent `spaos-space-ui` Wayland surface and draws a 48-pixel
+floating dock, bounded to the right half of the output. World, focus, and
+close buttons request compositor actions. The dock's visible bounds and
+SPAOS input rectangle share one geometry calculation; the controller accepts
+only that current rectangle. A compositor snapshot refresh resolves startup
+races between output resize and the first window list. SPAOS still owns window
+management and composition. The World client remains a distinct process and
+channel. Dragging the dock and the production window-management card remain
+to be ported.
 
 `run_spaos_shell_controller.sh` starts a plain Node controller that owns
 `SPAOS_SHELL_CHANNEL_FD`. It reuses SPAOS's `CompositorClient`,
@@ -414,9 +419,9 @@ the controller connected.
 
 The Linux headless test runs an isolated Sway and SPAOS session through
 `test_native_shell_headless.sh`. It verifies the Shell handshake, role mapping,
-and a GPU readback with a transparent field and visible dock. The captured
-frame reported alpha 0 above the dock and 224 inside it at 1600×900. Existing
-tty sessions are left alone.
+and a GPU readback with a transparent field and visible dock. The v15 fixture
+passed at 1600×900, with alpha 0 in the field and nonzero alpha in the pill.
+Existing tty sessions are left alone.
 
 `build_spaos_shell_controller.sh` bundles the controller and a read-only
 `probe_spaos_catalog.mjs` CLI from the matching SPAOS shell TypeScript. The
@@ -469,14 +474,16 @@ World handshake. Both passed on Linux. The temporary service has no model key;
 the live tty2 service reported Hermes ready and answered a typed app question
 through the native chat field. The v7 runtime passed the isolated agent-call
 test, then a live Hermes reply on tty2 and keyboard scrolling were checked
-with screenshots. Tty2 v12 uses native Valdi processes for both World and
+with screenshots. Tty2 v15 uses native Valdi processes for both World and
 Space UI. It launches Calculator through SPAOS's authenticated app catalog,
 shows the real app through the transparent Space UI, and passes pointer input
 to Calculator. The Linux WebGPU canvas bridge now forwards Three's
 premultiplied alpha mode to Dawn, and the shell surface is borderless. A live
 screenshot showed Calculator above the native meadow with the native dock; a
-click on Calculator's 4 button changed its display to 4. SPAOS remains the
-compositor, and tty1's production session was not changed.
+click on Calculator's 4 button changed its display to 4. The v15 floating dock
+was checked with a real Calculator launch, a floor-tile return, a World switch,
+and a Calculator close. SPAOS remains the compositor, and tty1's production
+session was not changed.
 The Electron argument must be the exact installed executable path used in the
 Package Manager launch records; a CLI shim changes the launch digest and correctly
 causes the catalog to reject those app presentations.

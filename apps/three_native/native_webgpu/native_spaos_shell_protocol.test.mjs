@@ -12,18 +12,20 @@ function harness() {
   return { shell, sent, states, get quits() { return quits; } };
 }
 
-test('a matching SPAOS hello authorizes the dock and its output rectangle', () => {
+test('the dock waits for windows and follows the latest output rectangle', () => {
   const h = harness();
   assert.equal(h.shell.focus(4), false);
   h.shell.ingest('{"type":"hello","protocol":20,"output":{"width":1600,"height":900,"scale":1}}\n');
-  assert.deepEqual(h.sent, [
-    { type: 'reserve_space_ui', height: 64 },
-    { type: 'set_dock_rect', x: 0, y: 836, w: 1600, h: 64, home: false },
-  ]);
+  assert.deepEqual(h.sent, [{ type: 'reserve_space_ui', height: 48 }]);
   h.shell.ingest('{"type":"output","output":{"width":1280,"height":800,"scale":1.5}}\n');
+  assert.equal(h.sent.length, 1);
+  h.shell.ingest('{"type":"windows","windows":[]}\n');
   assert.deepEqual(h.sent.at(-1),
-    { type: 'set_dock_rect', x: 0, y: 736, w: 1280, h: 64, home: false });
-  assert.equal(h.states.at(-1).output.width, 1280);
+    { type: 'set_dock_rect', x: 914, y: 733, w: 92, h: 48, home: true });
+  h.shell.ingest('{"type":"output","output":{"width":1600,"height":900}}\n');
+  assert.deepEqual(h.sent.at(-1),
+    { type: 'set_dock_rect', x: 1154, y: 833, w: 92, h: 48, home: true });
+  assert.equal(h.states.at(-1).output.width, 1600);
 });
 
 test('window and space actions are bounded to the latest compositor snapshot', () => {
@@ -31,6 +33,8 @@ test('window and space actions are bounded to the latest compositor snapshot', (
   h.shell.ingest('{"type":"hello","protocol":20,"output":{"width":1600,"height":900}}\n');
   h.shell.ingest('{"type":"windows","windows":[{"id":4,"title":"Editor"}]}\n' +
     '{"type":"spaces","spaces":[{"id":2,"active":true}]}\n');
+  assert.deepEqual(h.sent.at(-1),
+    { type: 'set_dock_rect', x: 1096, y: 833, w: 208, h: 48, home: true });
   assert.equal(h.shell.focus(4), true);
   assert.equal(h.shell.close(5), false);
   assert.equal(h.shell.switchSpace(2), true);
@@ -51,5 +55,5 @@ test('mismatched protocol fails closed and quit stops processing', () => {
   h.shell.ingest('{"type":"lifecycle_quit"}\n');
   assert.equal(h.quits, 1);
   h.shell.ingest('{"type":"output","output":{"width":800,"height":600}}\n');
-  assert.equal(h.sent.length, 2);
+  assert.equal(h.sent.length, 1);
 });

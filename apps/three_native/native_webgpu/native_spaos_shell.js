@@ -2,9 +2,10 @@ import * as THREE from 'three/webgpu';
 import { PROTOCOL_VERSION } from '@spaos/shell-protocol';
 import { createNativeText } from './native_shell_hud.js';
 import { createNativeSpaosShellProtocol } from './native_spaos_shell_protocol.mjs';
+import { nativeDockLayout } from './native_space_dock.mjs';
 
-// A first native Space UI. SPAOS remains the compositor and owns all window
-// and space operations. This scene only presents its snapshots and requests.
+// SPAOS remains the compositor and owns all window and space operations.
+// This scene presents its snapshots and requests in a bounded floating dock.
 async function run() {
   globalThis.self = globalThis;
   globalThis.requestAnimationFrame = () => 0;
@@ -57,11 +58,22 @@ async function run() {
     shapes.length = 0;
     hits.length = 0;
   }
-  function rectangle(x, y, w, h, color, opacity = 1) {
-    const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h),
+  function roundedRectangle(x, y, w, h, radius, color, opacity = 1) {
+    const r = Math.min(radius, h / 2, w / 2);
+    const shape = new THREE.Shape();
+    shape.moveTo(r, 0);
+    shape.lineTo(w - r, 0);
+    shape.quadraticCurveTo(w, 0, w, r);
+    shape.lineTo(w, h - r);
+    shape.quadraticCurveTo(w, h, w - r, h);
+    shape.lineTo(r, h);
+    shape.quadraticCurveTo(0, h, 0, h - r);
+    shape.lineTo(0, r);
+    shape.quadraticCurveTo(0, 0, r, 0);
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape),
       new THREE.MeshBasicMaterial({ color, transparent: opacity < 1, opacity,
         depthTest: false, depthWrite: false, toneMapped: false }));
-    mesh.position.set(x + w / 2 - width / 2, height / 2 - y - h / 2, 0);
+    mesh.position.set(x - width / 2, height / 2 - y - h, 0);
     mesh.renderOrder = shapes.length;
     scene.add(mesh);
     shapes.push(mesh);
@@ -79,36 +91,30 @@ async function run() {
     shapes.push(mesh);
     return w;
   }
-  function button(x, y, w, label, active, action) {
-    rectangle(x, y, w, 42, active ? 0x4f6587 : 0x27374d, .96);
-    text(label, x + 12, y + 13, 14);
-    hits.push({ x, y, w, h: 42, action });
-  }
   function rebuild() {
     clearShapes();
-    const y = height - 64;
-    rectangle(0, y, width, 64, 0x121a27, .88);
-    rectangle(0, y, width, 1, 0x8ba1be, .6);
-    button(12, y + 11, 112, 'WORLD', !state.spaces.some(s => s.active),
-      () => shell.switchSpace(0));
-    let x = 136;
-    for (const space of state.spaces.slice(0, 5)) {
-      const label = space.name || `SPACE ${space.id}`;
-      const w = Math.min(150, Math.max(86, label.length * 10 + 24));
-      if (x + w > width - 120) break;
-      button(x, y + 11, w, label, !!space.active, () => shell.switchSpace(space.id));
-      x += w + 8;
+    const dock = nativeDockLayout({ width, height }, state.windows);
+    if (!dock) return;
+    roundedRectangle(dock.x, dock.y, dock.w, dock.h, 24, 0x1e2631, .83);
+    for (const button of dock.buttons) {
+      const y = dock.y + 8;
+      const focused = button.kind === 'window' &&
+        state.windows.some(window => window.id === button.id && window.focused);
+      roundedRectangle(button.x, y, button.width, 32, 16,
+        focused ? 0x67798e : 0x344356, focused ? .76 : .48);
+      text(button.label.slice(0, button.kind === 'world' ? 5 : 14),
+        button.x + 11, y + 9, 14);
+      if (button.kind === 'world') {
+        hits.push({ x: button.x, y, w: button.width, h: 32,
+          action: () => shell.switchSpace(0) });
+      } else {
+        text('×', button.x + button.width - 22, y + 7, 18);
+        hits.push({ x: button.x + button.width - 28, y, w: 28, h: 32,
+          action: () => shell.close(button.id) });
+        hits.push({ x: button.x, y, w: button.width - 28, h: 32,
+          action: () => shell.focus(button.id) });
+      }
     }
-    for (const window of state.windows.slice(0, 5)) {
-      const label = window.title || window.app_id || `WINDOW ${window.id}`;
-      const w = Math.min(180, Math.max(90, label.length * 8 + 22));
-      if (x + w > width - 110) break;
-      button(x, y + 11, w, label, !!window.focused, () => shell.focus(window.id));
-      x += w + 8;
-    }
-    const now = new Date();
-    text(`${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
-      width - 76, y + 23, 15);
     dirty = false;
   }
   function resize(nextWidth, nextHeight) {
@@ -172,7 +178,9 @@ async function run() {
       const rgba = new Uint8Array(pixels);
       const centerAlpha = rgba[Math.floor(height / 2) * stride +
         Math.floor(width / 2) * 4 + 3];
-      const dockAlpha = rgba[(height - 32) * stride + Math.floor(width / 2) * 4 + 3];
+      const dock = nativeDockLayout({ width, height }, state.windows);
+      const dockAlpha = rgba[(dock.y + Math.floor(dock.h / 2)) * stride +
+        (dock.x + Math.floor(dock.w / 2)) * 4 + 3];
       __nativeSaveFrame(pixels, width, height, stride,
         RNWebGPU.gpu.getPreferredCanvasFormat());
       readback.unmap();

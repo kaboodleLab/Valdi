@@ -12,6 +12,7 @@ import { probeSpaosCatalog, scanHostApps } from './probe_spaos_catalog.mjs';
 import { handleNativeShellHarness } from './native_shell_harness.mjs';
 import { createNativeShellHandoff } from './native_shell_handoff.mjs';
 import { requestFromNativeUi } from './native_shell_ui_requests.mjs';
+import { nativeDockLayout } from './native_space_dock.mjs';
 
 const MAX_UI_LINE = 8192;
 const MAX_UI_OUTBOX = 1024 * 1024;
@@ -174,6 +175,17 @@ async function run() {
     const request = requestFromNativeUi(value,
       { output: client.output, windows: client.windows, spaces: client.spaces });
     if (request) client.send(request);
+    else if (value?.type === 'set_dock_rect') {
+      const expected = nativeDockLayout(client.output, client.windows);
+      log(`refused dock rectangle ${JSON.stringify(value)}; expected ` +
+        `${JSON.stringify(expected && { x: expected.x, y: expected.y,
+          w: expected.w, h: expected.h, home: expected.home })}; ` +
+        `windows ${JSON.stringify(client.windows.map(window => window.id))}`);
+      // A resize and a window event can cross the renderer's first hello.
+      // Give it the current authoritative snapshots so it can recompute.
+      if (client.output) sendUi({ type: 'output', output: client.output });
+      sendUi({ type: 'windows', windows: client.windows });
+    }
     else log(`refused renderer request ${String(value?.type).slice(0, 40)}`);
   };
   const server = net.createServer(socket => {
