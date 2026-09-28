@@ -298,7 +298,7 @@ int main(int argc, char** argv) {
         : "WorldOS home scene - Valdi Three/Dawn";
     SDL_Window* window = SDL_CreateWindow(title, kWidth, kHeight,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE |
-        (shellClient ? SDL_WINDOW_TRANSPARENT : 0));
+        (shellClient ? SDL_WINDOW_TRANSPARENT | SDL_WINDOW_BORDERLESS : 0));
     if (window == nullptr) {
         std::fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
         SDL_Quit();

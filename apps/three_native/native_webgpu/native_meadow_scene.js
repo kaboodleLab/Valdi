@@ -107,10 +107,11 @@ export function createNativeMeadowScene(THREE) {
   return {
     root,
     setOccupiedCells(cells) {
-      if (cells.size === occupied.size && [...cells].every(key => occupied.has(key))) return;
+      if (cells.size === occupied.size && [...cells].every(key => occupied.has(key))) return false;
       occupied.clear();
       for (const cell of cells) occupied.add(cell);
       rebuild();
+      return true;
     },
     setHole(x, z) {
       if (x === holeX && z === holeZ) return;

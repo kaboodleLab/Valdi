@@ -97,7 +97,7 @@ arithmetic follows WorldOS `ground-scenes.js`; 25,921 terrain vertices and
 tile cells clear the grass, and the live jar cell moves the lowland. The native
 adapter currently rebuilds geometry when floor occupancy changes and has no
 production wind, shader caches, theme transitions, lighting or shadow pass.
-The grid remains the default for an unprefixed bundle. The meadow-enabled v9
+The grid remains the default for an unprefixed bundle. The meadow-enabled v12
 runtime is running on Linux tty2 at 2880×1800: steady frame interval p50
 16.6 ms and p95 17.3–17.6 ms across several 120-frame windows. The isolated
 SPAOS mind-call test and a live typed Hermes reply passed with that scene.
@@ -469,7 +469,14 @@ World handshake. Both passed on Linux. The temporary service has no model key;
 the live tty2 service reported Hermes ready and answered a typed app question
 through the native chat field. The v7 runtime passed the isolated agent-call
 test, then a live Hermes reply on tty2 and keyboard scrolling were checked
-with screenshots.
+with screenshots. Tty2 v12 uses native Valdi processes for both World and
+Space UI. It launches Calculator through SPAOS's authenticated app catalog,
+shows the real app through the transparent Space UI, and passes pointer input
+to Calculator. The Linux WebGPU canvas bridge now forwards Three's
+premultiplied alpha mode to Dawn, and the shell surface is borderless. A live
+screenshot showed Calculator above the native meadow with the native dock; a
+click on Calculator's 4 button changed its display to 4. SPAOS remains the
+compositor, and tty1's production session was not changed.
 The Electron argument must be the exact installed executable path used in the
 Package Manager launch records; a CLI shim changes the launch digest and correctly
 causes the catalog to reject those app presentations.

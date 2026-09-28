@@ -793,7 +793,9 @@ async function render() {
     previewGenerationBySpace = nextPreviewGenerationBySpace;
     occupiedCells = nextOccupiedCells;
     if (meadow) {
-      meadow.setOccupiedCells(nextOccupiedCells);
+      if (meadow.setOccupiedCells(nextOccupiedCells))
+        __webgpuSurfaceStage(`WorldOS meadow cleared ${nextOccupiedCells.size} floor cells; ` +
+          `${meadow.stats().blades} blades remain`);
       if (jar.visible) meadow.setHole(jarX, jarZ);
     }
     if (snapshotChanged)
@@ -951,8 +953,16 @@ async function render() {
     }
     pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
     raycaster.setFromCamera(pointerNdc, camera);
-    if (raycaster.ray.intersectPlane(floor, hit)) {
-      const cx = Math.round(hit.x), cz = Math.round(hit.z);
+    // The meadow can stand well above the flat grid plane. Pick the visible
+    // authored tile before falling back to that plane, including Space tiles
+    // published after the renderer's first frame.
+    const tileHit = clicked ? raycaster.intersectObjects([
+      ...tileByName.values(), ...floorTileByFloorObject.values(),
+      ...[...extraByName.values()].flatMap(entries => entries.map(entry => entry.tile)),
+    ].filter(tile => tile.visible), false)[0] : null;
+    if (tileHit || raycaster.ray.intersectPlane(floor, hit)) {
+      const cx = Math.round(tileHit ? tileHit.object.position.x : hit.x);
+      const cz = Math.round(tileHit ? tileHit.object.position.z : hit.z);
       uniforms.uHoverCell.value.set(cx, cz);
       uniforms.uHasHover.value = 1;
       if (clicked) {

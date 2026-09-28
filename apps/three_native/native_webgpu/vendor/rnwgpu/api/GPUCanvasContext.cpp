@@ -24,7 +24,9 @@ void GPUCanvasContext::configure(
     viewFormats = configuration->viewFormats.value();
   }
 
-#ifdef __APPLE__
+#if defined(__APPLE__) || defined(__linux__)
+  // Native transparent Wayland shell surfaces need the canvas alpha mode
+  // requested by Three. An opaque swapchain hides every window below it.
   surfaceConfiguration.alphaMode = configuration->alphaMode;
 #endif
   surfaceConfiguration.presentMode = wgpu::PresentMode::Fifo;
