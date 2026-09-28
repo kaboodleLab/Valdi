@@ -10,6 +10,8 @@ import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
 import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
 import { worldSunGrade } from './native_world_sun.mjs';
+import { createNativeArrivalReveal } from './native_world_arrival.mjs';
+import { beginReturnFromFloor } from './native_world_return.mjs';
 
 function nativeIconLoader(name, manifest) {
   const loader = new GLTFLoader();
@@ -249,6 +251,7 @@ async function render() {
   let cachedState = { layout: {}, props: [] };
   let cachedFileFloor = null;
   let cachedFileFloorRevision = null;
+  const revealArrival = createNativeArrivalReveal();
   function requestModel(name) {
     if (!manifest[name]?.images || modelByName.has(name) || modelLoadByName.has(name)) return;
     modelLoadByName.set(name, loadIcon(name).then(model => {
@@ -570,6 +573,8 @@ async function render() {
     const props = Array.isArray(state.props) ? state.props : [];
     const spaces = Array.isArray(floor?.spaces) ? floor.spaces :
       (Array.isArray(floor) ? floor : []);
+    returningSpace = beginReturnFromFloor(activeSpace, returningSpace, spaces,
+      previewGenerationBySpace, cardBySpace);
     const positions = new Map();
     const addPosition = (name, cell) => {
       const cells = positions.get(name) || [];
@@ -1041,6 +1046,10 @@ async function render() {
       applyWorldLight();
     }
     const floorChanged = pollWorldChannel();
+    const revealedSpace = revealArrival(channelFloor?.spaces ?? cachedFileFloor?.spaces,
+      globalThis.__nativeWorldReveal);
+    if (revealedSpace !== null)
+      __webgpuSurfaceStage(`WorldOS revealed mapped space ${revealedSpace}`);
     pollAgentChannel();
     if (floorChanged || pendingIconRefresh || frame % 60 === 0 ||
         (pendingPreview && startedAt >= nextPreviewRetryAt))

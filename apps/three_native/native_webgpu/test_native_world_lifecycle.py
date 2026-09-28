@@ -22,7 +22,7 @@ def main() -> None:
     with tempfile.TemporaryDirectory(prefix="valdi-world-lifecycle-") as directory:
         scripted = Path(directory) / "world.js"
         scripted.write_bytes(
-            b"setTimeout(() => globalThis.__worldRestart(), 1000);\n"
+            b"setTimeout(() => globalThis.__worldRestart(), 2500);\n"
             + Path(bundle).read_bytes()
         )
         parent, child = socket.socketpair()
@@ -42,6 +42,9 @@ def main() -> None:
         parent.setblocking(False)
         received = b""
         types = []
+        floor_sent = False
+        revealed_space = False
+        revealed_window = False
         deadline = time.monotonic() + 40
         try:
             while time.monotonic() < deadline:
@@ -58,6 +61,19 @@ def main() -> None:
                     line, received = received.split(b"\n", 1)
                     message = json.loads(line)
                     types.append(message.get("type"))
+                    if message.get("type") == "lifecycle_ready" and not floor_sent:
+                        floor_sent = True
+                        floor = {"type": "spaces", "spaces": [{
+                            "id": 1, "active": True, "windows": 1,
+                            "at": {"x": 5, "z": 0},
+                            "seats": [{"window": 9, "x": 0, "y": 0, "w": 200, "h": 100}],
+                        }]}
+                        parent.sendall((json.dumps(floor) + "\n").encode())
+                    if message.get("type") == "reveal_windows" and message.get("space") == 1:
+                        if message.get("window") == 9:
+                            revealed_window = True
+                        elif "window" not in message:
+                            revealed_space = True
                     if message.get("type") != "lifecycle":
                         continue
                     request = message["request"]
@@ -83,6 +99,8 @@ def main() -> None:
                         if types.count("hello") != 1 or types.count("lifecycle_ready") != 1 \
                                 or types.count("lifecycle") != 2:
                             raise RuntimeError(f"unexpected channel sequence: {types}")
+                        if not revealed_space or not revealed_window:
+                            raise RuntimeError(f"mapped floor was not revealed: {types}")
                         print("native World lifecycle passed:", types)
                         print(output.strip())
                         return

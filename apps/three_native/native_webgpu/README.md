@@ -310,6 +310,14 @@ GLB (about 53 MiB) can load when needed.
   `native_world_placement.mjs` owns the free-tile choice and is tested without
   a GPU. Previews and fallback labels are disposed when SPAOS removes their
   floor object; GLB templates are cached by asset name and loaded on demand.
+- SPAOS's World channel also owns transition holds. The native host services
+  its authenticated floor socket on SDL's thread while WebGPU presentation is
+  blocked by a hidden World surface. It reveals the active space and each
+  mapped window seat as soon as the floor reports them; it retains every event
+  for Hermes. The JavaScript reveal path covers frames that read a floor event
+  first. On return, `native_world_return.mjs` detects both Back and SPAOS dock
+  switches and releases the departing space after a newer window preview has
+  been installed on the native tile. SPAOS deadlines remain crash fallbacks.
 
 On the Linux host, an isolated SPAOS session delivered its actual app catalog
 to Hermes and opened the native launcher. A second isolated session
@@ -336,12 +344,11 @@ SPAOS after its first GPU frame. Ctrl+F5 requests a World-only restart through
 the inherited SPAOS channel; on `lifecycle_quit`, the host releases its WebGPU
 surface and exits so the compositor can replace only World. The request checks
 the compositor's current session and World readiness before submitting. It does
-not require the optional external-agent lifecycle socket or token. The currently
-running tty2 host predates this change; the staged binary takes effect on its
-next launch.
+not require the optional external-agent lifecycle socket or token.
 The Linux lifecycle regression runs the compiled host on an isolated Wayland
 display with a private socket pair. It checks `hello`, readiness after a GPU
-frame, status and restart requests, `lifecycle_quit`, and a clean exit:
+frame, mapped space and window reveals from a synthetic SPAOS floor, status
+and restart requests, `lifecycle_quit`, and a clean exit:
 
 ```sh
 XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-2 \
@@ -350,8 +357,8 @@ XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-2 \
   /path/to/native-world-runtime/world.js /path/to/native-world-runtime/assets
 ```
 
-That probe passed on the Linux test GPU. A compositor-managed replacement in
-the live tty2 session still needs the next launch of its staged native host.
+That probe passed on the Linux test GPU. The live tty2 session also runs this
+lifecycle-capable host.
 The end-to-end acceptance test starts a separate SPAOS compositor under an
 isolated Wayland display. Its first World calls `__worldRestart()` from Hermes;
 the test checks that SPAOS replaces the World process, maps the replacement,
@@ -370,8 +377,19 @@ This passed on the Linux test host: the first native World requested its own
 restart and SPAOS marked the replacement `succeeded` after it mapped.
 An isolated headless SPAOS session validated a freshly built bundle through
 tile entry, Back, an updated preview, and release of the departing window.
-The live tty2 session remains running while new bundles are checked in isolated
-sessions.
+New bundles are checked in isolated sessions before tty2 is updated.
+
+The current live tty2 uses the native World scene and native SPAOS Space UI
+under the SPAOS compositor. Its home contains the authored jar and meadow,
+eleven WorldOS People avatars driven by the shared character simulation, a
+People card, launcher, WorldOS chat, and a dock. A real Calculator launch from
+the native launcher maps an Electron app into SPAOS's space. In the September
+2026 live test, the mapped app window and space were revealed 29 ms after the
+window mapped; returning with the SPAOS World dock refreshed the tile preview
+and released the linger 76 ms after the space switch. Neither transition
+reached SPAOS's hold deadline. With the avatars visible, 120-frame steady-state
+intervals measured about 22 ms at p50 and 25 ms at p95 on the test GPU. This is
+functional parity work, not yet the full production WorldOS room or animation.
 
 The parity-v8 bundle passed isolated GPU fixtures with lazily loaded
 Calculator and Settings models, saved Music and Dinner props, and a Console

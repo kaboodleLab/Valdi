@@ -4,6 +4,8 @@
 #include "valdi/runtime/JavaScript/JavaScriptRuntime.hpp"
 #include "valdi/runtime/Runtime.hpp"
 #include "valdi_core/cpp/Utils/StringCache.hpp"
+#include "valdi_core/cpp/Utils/ValueArray.hpp"
+#include "valdi_core/cpp/Utils/ValueUtils.hpp"
 
 #include <SDL3/SDL.h>
 #include <jsi/jsi.h>
@@ -25,6 +27,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <fcntl.h>
@@ -84,7 +87,31 @@ public:
 
     bool isOpen() const { return fd_ >= 0; }
 
+    void enableWorldArrival() { autoRevealWorld_ = true; }
+
     bool sendLine(const std::string& line) {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return sendLineLocked(line);
+    }
+
+    // SPAOS can hide the World surface during an app arrival. WebGPU present
+    // may then stall its JS draw loop, so service the channel on SDL's thread
+    // too. Retain every line for JS; only the arrival reveal is handled here.
+    void serviceWorldArrival() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        readLocked(true);
+    }
+
+    std::string poll() {
+        std::lock_guard<std::mutex> lock(mutex_);
+        readLocked(autoRevealWorld_);
+        std::string complete;
+        complete.swap(ready_);
+        return complete;
+    }
+
+private:
+    bool sendLineLocked(const std::string& line) {
         if (fd_ < 0 || line.size() > maxLine_ ||
             outbound_.size() + line.size() + 1 > maxOutbox_ ||
             line.find('\n') != std::string::npos || line.find('\r') != std::string::npos)
@@ -95,15 +122,15 @@ public:
         return fd_ >= 0;
     }
 
-    std::string poll() {
+    void readLocked(bool revealArrival) {
         flush();
-        if (fd_ < 0) return {};
+        if (fd_ < 0) return;
         char bytes[16384];
         for (int reads = 0; reads < 64; ++reads) {
             const ssize_t count = recv(fd_, bytes, sizeof(bytes), MSG_DONTWAIT);
             if (count > 0) {
                 inbound_.append(bytes, static_cast<size_t>(count));
-                if (inbound_.size() > 1024 * 1024) { closeChannel(); return {}; }
+                if (inbound_.size() > 1024 * 1024) { closeChannel(); return; }
             } else if (count == 0) {
                 closeChannel();
                 break;
@@ -117,18 +144,83 @@ public:
             }
         }
         const size_t end = inbound_.rfind('\n');
-        if (end == std::string::npos) return {};
+        if (end == std::string::npos) return;
         std::string complete = inbound_.substr(0, end + 1);
         inbound_.erase(0, end + 1);
-        return complete;
+        if (ready_.size() + complete.size() > 4 * 1024 * 1024) {
+            closeChannel();
+            return;
+        }
+        ready_ += complete;
+        if (!revealArrival) return;
+        size_t start = 0;
+        while (start < complete.size()) {
+            const auto newline = complete.find('\n', start);
+            if (newline == std::string::npos) break;
+            revealFromFloor(std::string_view(complete).substr(start, newline - start));
+            start = newline + 1;
+        }
     }
 
-private:
+    void revealFromFloor(std::string_view line) {
+        // Parse the authenticated World floor rather than guessing a space ID
+        // from launch order. Ignore malformed or unrelated channel events.
+        auto parsed = Valdi::correctJsonToValue(line);
+        if (!parsed || !parsed.value().isMap()) return;
+        const auto& event = parsed.value();
+        if (event.getMapValue("type").toString() != "spaces") return;
+        const auto spaces = event.getMapValue("spaces");
+        if (!spaces.isArray()) return;
+        int active = 0;
+        int mapped = 0;
+        const Valdi::Value* activeRow = nullptr;
+        for (const auto& space : *spaces.getArray()) {
+            if (!space.isMap()) continue;
+            const auto id = space.getMapValue("id");
+            const auto isActive = space.getMapValue("active");
+            const auto windows = space.getMapValue("windows");
+            if (!id.isInt() || id.toInt() < 1 || id.toInt() > 1000000 ||
+                !isActive.isBool() || !isActive.toBool()) continue;
+            active = id.toInt();
+            activeRow = &space;
+            if (windows.isInt() && windows.toInt() > 0) mapped = active;
+            break;
+        }
+        if (active != arrivalSpace_) {
+            arrivalSpace_ = active;
+            revealedSpace_ = 0;
+            revealedWindows_.clear();
+        }
+        if (mapped && mapped != revealedSpace_ && sendLineLocked(
+                "{\"type\":\"reveal_windows\",\"space\":" + std::to_string(mapped) + "}")) {
+            revealedSpace_ = mapped;
+            std::fprintf(stderr, "Native World channel revealed mapped space %d\n", mapped);
+        }
+        if (!mapped || !activeRow) return;
+        const auto seats = activeRow->getMapValue("seats");
+        if (!seats.isArray()) return;
+        for (const auto& seat : *seats.getArray()) {
+            if (!seat.isMap()) continue;
+            const auto window = seat.getMapValue("window");
+            if ((!window.isInt() && !window.isLong()) || window.toLong() < 1 ||
+                revealedWindows_.count(window.toLong())) continue;
+            const auto id = window.toLong();
+            if (sendLineLocked("{\"type\":\"reveal_windows\",\"space\":" +
+                               std::to_string(mapped) + ",\"window\":" +
+                               std::to_string(id) + "}")) {
+                revealedWindows_.insert(id);
+                std::fprintf(stderr, "Native World channel revealed mapped window %lld in space %d\n",
+                             static_cast<long long>(id), mapped);
+            }
+        }
+    }
+
     void closeChannel() {
         if (fd_ >= 0) close(fd_);
         fd_ = -1;
         inbound_.clear();
         outbound_.clear();
+        ready_.clear();
     }
     void flush() {
         while (fd_ >= 0 && !outbound_.empty()) {
@@ -141,10 +233,16 @@ private:
         }
     }
     int fd_;
+    std::mutex mutex_;
     size_t maxLine_;
     size_t maxOutbox_;
     std::string inbound_;
     std::string outbound_;
+    std::string ready_;
+    int arrivalSpace_ = 0;
+    int revealedSpace_ = 0;
+    std::unordered_set<int64_t> revealedWindows_;
+    bool autoRevealWorld_ = false;
 };
 
 std::shared_ptr<NativeChannel> channelFromEnvironment(const char* name,
@@ -195,6 +293,7 @@ std::shared_ptr<NativeChannel> channelFromLocalSocket(const char* raw,
 std::shared_ptr<NativeChannel> worldChannelFromEnvironment() {
     auto channel = channelFromEnvironment("SPAOS_APP_CHANNEL_FD", 256 * 1024, 1024 * 1024);
     if (!channel) return {};
+    channel->enableWorldArrival();
     channel->sendLine("{\"type\":\"hello\",\"protocol\":1}");
     return channel;
 }
@@ -457,6 +556,21 @@ int main(int argc, char** argv) {
                             std::to_string(static_cast<int>(space)) + "}"));
                     });
                 jsi->global().setProperty(*jsi, "__nativeWorldRelease", std::move(releaseWorld));
+                auto revealWorld = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldReveal"), 1,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 1 || !args[0].isNumber())
+                            throw facebook::jsi::JSError(js, "Expected WorldOS space id");
+                        const double space = args[0].getNumber();
+                        if (!std::isfinite(space) || space < 1 || space > 1000000 ||
+                            std::floor(space) != space)
+                            throw facebook::jsi::JSError(js, "Invalid WorldOS space id");
+                        return facebook::jsi::Value(worldChannel->sendLine(
+                            "{\"type\":\"reveal_windows\",\"space\":" +
+                            std::to_string(static_cast<int>(space)) + "}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldReveal", std::move(revealWorld));
                 auto openWorld = facebook::jsi::Function::createFromHostFunction(
                     *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldOpen"), 3,
                     [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
@@ -840,6 +954,7 @@ int main(int argc, char** argv) {
             }
         }
         if (quit) break;
+        if (worldChannel) worldChannel->serviceWorldArrival();
         bool presented = false;
         bool quitRequested = false;
         {

@@ -63,6 +63,7 @@ cc_binary(
         "//apps/three_native/native_webgpu:rnwgpu_api",
         "//apps/three_native/src/valdi/three_native:three_native_native",
         "//valdi:valdi_linux",
+        "//valdi_core:valdi_core_cc",
         "@hermes//:hermes_api",
     ],
 )
