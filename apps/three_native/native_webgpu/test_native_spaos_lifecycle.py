@@ -138,6 +138,9 @@ def main() -> None:
                     except subprocess.TimeoutExpired:
                         os.killpg(process.pid, signal.SIGKILL)
                         process.wait(timeout=5)
+        for leftover in (Path(runtime_parent) / socket_name,
+                         Path(runtime_parent) / f"{socket_name}.lock"):
+            leftover.unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

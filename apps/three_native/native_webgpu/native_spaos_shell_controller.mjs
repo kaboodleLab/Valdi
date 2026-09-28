@@ -50,6 +50,8 @@ async function run() {
   let connected = false;
   let ui = null;
   let uiAuthenticated = false;
+  let uiReady = false;
+  let reportedReady = false;
   let child = null;
   let closed = false;
   let catalogPromise = null;
@@ -93,8 +95,15 @@ async function run() {
     if (!catalogPromise) catalogPromise = publish().finally(() => { catalogPromise = null; });
     return catalogPromise;
   };
+  const reportReady = () => {
+    if (!connected || !uiReady || reportedReady) return;
+    client.send({ type: 'lifecycle_ready' });
+    reportedReady = true;
+    log('native Space UI frame presented; Shell lifecycle ready');
+  };
   const handleUiRequest = value => {
-    if (!connected || value?.type === 'lifecycle_ready') return;
+    if (value?.type === 'lifecycle_ready') { uiReady = true; reportReady(); return; }
+    if (!connected) return;
     const request = requestFromNativeUi(value,
       { output: client.output, windows: client.windows, spaces: client.spaces });
     if (request) client.send(request);
@@ -150,8 +159,8 @@ async function run() {
   client.on('hello', hello => { instanceName = hello.instanceName; });
   client.on('connected', () => {
     connected = true;
-    client.send({ type: 'lifecycle_ready' });
     greetUi();
+    reportReady();
     refresh().catch(error => log(`catalog refresh failed: ${String(error)}`));
   });
   client.on('windows', windows => sendUi({ type: 'windows', windows }));

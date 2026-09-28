@@ -17,7 +17,6 @@ test('a matching SPAOS hello authorizes the dock and its output rectangle', () =
   assert.equal(h.shell.focus(4), false);
   h.shell.ingest('{"type":"hello","protocol":20,"output":{"width":1600,"height":900,"scale":1}}\n');
   assert.deepEqual(h.sent, [
-    { type: 'lifecycle_ready' },
     { type: 'reserve_space_ui', height: 64 },
     { type: 'set_dock_rect', x: 0, y: 836, w: 1600, h: 64, home: false },
   ]);
@@ -52,5 +51,5 @@ test('mismatched protocol fails closed and quit stops processing', () => {
   h.shell.ingest('{"type":"lifecycle_quit"}\n');
   assert.equal(h.quits, 1);
   h.shell.ingest('{"type":"output","output":{"width":800,"height":600}}\n');
-  assert.equal(h.sent.length, 3);
+  assert.equal(h.sent.length, 2);
 });

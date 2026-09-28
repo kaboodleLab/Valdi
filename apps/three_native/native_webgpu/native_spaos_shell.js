@@ -184,10 +184,13 @@ async function run() {
     ++frame;
     if (frame === 1) __webgpuSurfaceStage('Native Space UI first frame presented');
     if (frame % 120 === 0) __webgpuSurfaceStage(`Native Space UI frames presented: ${frame}, hello ${state.ready}`);
-    if (state.ready && !announced && __nativeFrameLimit === 0) {
+    if (state.ready && !announced) {
       announced = true;
+      if (!__nativeShellSend(JSON.stringify({ type: 'lifecycle_ready' })))
+        throw new Error('Could not report native Space UI readiness');
       __webgpuSurfaceStage(`Native SPAOS Space UI via Three r${THREE.REVISION}; handshake ready`);
-      __webgpuSurfaceDone(true, `Native SPAOS Space UI via Three r${THREE.REVISION}`);
+      if (__nativeFrameLimit === 0)
+        __webgpuSurfaceDone(true, `Native SPAOS Space UI via Three r${THREE.REVISION}`);
     }
     if (__nativeFrameLimit > 0 && frame >= __nativeFrameLimit) {
       __webgpuSurfaceDone(state.ready, `Native SPAOS Space UI: ${frame} frames, handshake ${state.ready}`);

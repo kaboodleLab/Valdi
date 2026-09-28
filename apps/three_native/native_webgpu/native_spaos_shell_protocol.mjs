@@ -37,7 +37,6 @@ export function createNativeSpaosShellProtocol({ protocolVersion, send, onState,
             !acceptOutput(event.output))
           throw new Error('SPAOS shell protocol or output mismatch');
         ready = true;
-        request({ type: 'lifecycle_ready' });
         request({ type: 'reserve_space_ui', height: dockHeight });
         placeDock();
         publish();

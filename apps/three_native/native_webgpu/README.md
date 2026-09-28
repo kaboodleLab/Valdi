@@ -379,6 +379,10 @@ controller spawns Valdi with no Shell capability descriptor. The renderer
 authenticates over a private local socket and can request only current window
 and space actions and the bounded dock geometry. `run_spaos_shell.sh` remains
 a direct-capability probe for comparison, not the controller configuration.
+The controller reports Shell lifecycle readiness to SPAOS only after the
+authenticated Valdi renderer has completed its first GPU frame. A native
+renderer startup failure therefore cannot mark the Shell ready merely because
+the controller connected.
 
 The Linux headless test runs an isolated Sway and SPAOS session through
 `test_native_shell_headless.sh`. It verifies the Shell handshake, role mapping,
@@ -408,6 +412,12 @@ digest-bound runtime record, and its Wayland window mapped in its own SPAOS
 space. A separate temporary XDG desktop entry exercised
 the host command path with `/usr/bin/true`. The GPU frame showed alpha 0 above
 the taskbar and 224 inside it. Existing tty sessions remained running.
+`test_native_spaos_shell_lifecycle.py` runs a separate SPAOS session with both
+native World and native Space UI, requests a Shell-only restart, and checks
+that two Shell processes each report readiness after their first GPU frame
+while the same World process stays ready. This passed on the Linux test host.
+`test_native_shell_headless.sh` accepts `SHELL_BUNDLE` for testing a versioned
+Space UI bundle alongside a versioned World bundle.
 
 The controller still omits the Electron shell's voice and harness responders,
 live Verb proxy descriptions, hidden-app settings, backdrop and room-light
