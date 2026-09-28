@@ -101,7 +101,8 @@ export function createNativeText(THREE, manifest, readAsset) {
 
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
   onBack, onPeople, onOpen, onSelectPerson, onFindPerson, onPausePeople,
-  stage, makeText = createNativeText(THREE, manifest, readAsset) }) {
+  allowHomePeoplePanel = false, stage,
+  makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
   camera.add(root);
   scene.add(camera);
@@ -491,16 +492,17 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       redrawPeople();
     },
     togglePeoplePanel() {
-      if (view !== 'people') return;
+      if (view !== 'people' && !allowHomePeoplePanel) return;
       peopleOpen = !peopleOpen;
       redrawPeople();
       stage(peopleOpen ? 'WorldOS native People panel opened' :
         'WorldOS native People panel closed');
     },
+    hasPeoplePanel: () => peopleOpen,
     closePeoplePanel() { peopleOpen = false; redrawPeople(); },
     setView(nextView, sample = true) {
       view = nextView;
-      if (view !== 'people') peopleOpen = false;
+      if (view !== 'people' && !allowHomePeoplePanel) peopleOpen = false;
       peopleSample = sample;
       peoplePlate.material.opacity = view === 'people' ? .8 : .38;
       peopleMark.visible = view === 'people' && sample;

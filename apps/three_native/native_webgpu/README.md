@@ -95,6 +95,8 @@ a bounded native Rolling meadow adapter. Its hill, seed, lowland and color-noise
 arithmetic follows WorldOS `ground-scenes.js`; 25,921 terrain vertices and
 331,776 tapered blade instances draw in 36 culled patches. SPAOS's current
 tile cells clear the grass, and the live jar cell moves the lowland. The native
+terrain extends beyond the grass patches so a wide camera cannot reveal the
+white grid underneath at the viewport corners. The native
 adapter currently rebuilds geometry when floor occupancy changes and has no
 production wind, shader caches, theme transitions or shadow pass. The native
 World samples the local clock and feeds WorldOS's elevation palette, floor
@@ -107,7 +109,8 @@ across several 120-frame windows. The isolated
 SPAOS mind-call test and a live typed Hermes reply passed with that scene.
 An additional `globalThis.__nativeWorldPeopleOnHome = true` prefix draws the
 WorldOS character simulation over that home floor, with feet following the
-meadow height, readable name labels, and a click through to the People panel.
+meadow height, readable name labels, and a click that opens the People card
+over the same scene. Back closes the card before leaving the World.
 This uses the authored sample team until an authenticated live roster arrives.
 The combined scene on tty2 measured interval p50 about 22 ms and p95 about
 25 ms with 11 animated people and full grass detail; avatar rendering is the

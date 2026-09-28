@@ -7,7 +7,8 @@ export function createNativeMeadowScene(THREE) {
   const root = new THREE.Group();
   root.name = 'nativeRollingMeadow';
   const occupied = new Set();
-  const size = 24, terrainSegments = 160, density = 24, chunkSide = 4;
+  const size = 24, terrainSize = 32, terrainSegments = 160, density = 24,
+    chunkSide = 4;
   // The native grid bed is at y=0; the browser World's bed is 0.5 - TILE.BED.
   // Keep the lowland visible over that bed while its white tiles stand above it.
   const base = .006;
@@ -15,7 +16,10 @@ export function createNativeMeadowScene(THREE) {
   const field = (x, z) => base + meadowHill(x, z) *
     meadowMemoryLowland(x, z, holeX, holeZ) * meadowRoom(x, z, occupied);
 
-  const geometry = new THREE.PlaneGeometry(size, size, terrainSegments, terrainSegments);
+  // The camera can glimpse beyond the outer grass patches at wide home zoom.
+  // Extend only the terrain so the underlying white grid cannot show at a corner.
+  const geometry = new THREE.PlaneGeometry(terrainSize, terrainSize,
+    terrainSegments, terrainSegments);
   geometry.rotateX(-Math.PI / 2);
   const positions = geometry.getAttribute('position');
   const colors = new Float32Array(positions.count * 3);

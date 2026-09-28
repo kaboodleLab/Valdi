@@ -392,6 +392,7 @@ async function render() {
   const hud = createNativeShellHud({ THREE, scene, camera, manifest,
     readAsset: name => __nativeReadAsset(name),
     makeText,
+    allowHomePeoplePanel: globalThis.__nativeWorldPeopleOnHome === true,
     stage: message => __webgpuSurfaceStage(message),
     onBack: () => globalThis.__worldBack(),
     onPeople: () => {
@@ -888,6 +889,7 @@ async function render() {
   globalThis.__worldBack = () => {
     if (conversation.blur()) return;
     if (hud.isOpen()) { hud.close(); return; }
+    if (hud.hasPeoplePanel()) { hud.closePeoplePanel(); return; }
     if (people.isOpen()) { setPeopleOpen(false); return; }
     if (typeof __nativeWorldLeave === 'function' && __nativeWorldLeave()) {
       const leavingSpace = activeSpace ?? requestedSpace;
@@ -988,7 +990,6 @@ async function render() {
       const person = people.pick(raycaster) ||
         people.pickScreen(x, y, surfaceWidth, surfaceHeight);
       if (person) {
-        setPeopleOpen(true);
         people.select(person);
         hud.selectPerson(person);
         hud.togglePeoplePanel();
