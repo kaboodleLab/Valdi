@@ -105,6 +105,11 @@ reframes the camera around them. Pause Wandering calls the shared character
 simulation's pause door. The panel marks simulated and live presence distinctly.
 Gestures, conversations and portal interactions are still browser-World features.
 The SPAOS floor and app channel continue updating while People is open.
+The native draw timer also dispatches Three's pending animation-frame callback
+once per draw. Three advances its node frame there; without it the GPU bone
+palettes stayed at their first pose while character positions, labels, and
+contact shadows kept updating. Two captures from one isolated People session
+at frames 200 and 500 verified that bodies now walk with their labels.
 
 An opt-in `globalThis.__nativeWorldGround = 'meadow'` bundle prefix now selects
 a bounded native Rolling meadow adapter. Its hill, seed, lowland and color-noise
@@ -128,9 +133,12 @@ WorldOS character simulation over that home floor, with feet following the
 meadow height, readable name labels, and a click that opens the People card
 over the same scene. Back closes the card before leaving the World.
 This uses the authored sample team until an authenticated live roster arrives.
-The combined scene on tty2 measured interval p50 about 22 ms and p95 about
-25 ms with 11 animated people and full grass detail; avatar rendering is the
-next performance target. The standalone GPU probe's fixed frame deadline can
+Before the animation-frame fix, the combined scene on tty2 measured interval
+p50 about 22 ms and p95 about 25 ms with 11 visible people and full grass
+detail, but its GPU skeletons were frozen. With animated skeletons, settled
+120-frame live tty2 windows measured about 33 ms p50 and 34 ms p95 at
+1600×900. Avatar rendering remains the next performance target. The
+standalone GPU probe's fixed frame deadline can
 expire while loading all 11 models, so compare its frame logs and capture
 separately from its exit code for this scene.
 When `SPAOS_WORLD_OS_ROOT` points to the WorldOS tree of the running SPAOS
@@ -413,15 +421,16 @@ the native launcher maps an Electron app into SPAOS's space. In the September
 window mapped; returning with the SPAOS World dock refreshed the tile preview
 and released the linger 76 ms after the space switch. Neither transition
 reached SPAOS's hold deadline. With the avatars visible, 120-frame steady-state
-intervals measured about 22 ms at p50 and 25 ms at p95 on the test GPU. This is
-functional parity work, not yet the full production WorldOS room or animation.
+intervals measured about 22 ms at p50 and 25 ms at p95 on the test GPU; the
+GPU skeletons were frozen in that build. The frame bridge now animates them,
+with settled live intervals around 33 ms p50 and 34 ms p95. This is functional
+parity work, with the production room and interaction still to come.
 
 On 2026-09-28, a separate headless 1600×900 SPAOS session validated the
 shared Home camera/rig bundle with meadow and all 11 avatars. The corrected
 vertical fit kept the full roster in frame. Settled 120-frame intervals across
-two runs ranged from 28.06–34.15 ms p50 and 34.32–40.14 ms p95. tty2 was
-inactive during these runs, so this
-bundle has not been installed as a persistent physical-console session.
+two runs ranged from 28.06–34.15 ms p50 and 34.32–40.14 ms p95, before the
+GPU skeleton fix. The corrected runtime has since been installed on tty2.
 
 The parity-v8 bundle passed isolated GPU fixtures with lazily loaded
 Calculator and Settings models, saved Music and Dinner props, and a Console

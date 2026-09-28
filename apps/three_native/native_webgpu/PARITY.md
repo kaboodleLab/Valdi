@@ -18,7 +18,7 @@ an empty space releases it immediately because there is no preview to await.
 | Home camera, occupancy fit, and jar rig | WorldOS `world-home-composition.js`; both browser and native consume its camera basis, Home framing law, jar profile, tilt/spin hierarchy, landed jar/contact-shadow pose and night-lamp law. Native People-on-Home adds vertical actor bounds to the fit. |
 | Jar glass and contact-shadow shaders | WorldOS `world-jar-materials.js`; browser and native import the same factories. Native scene capture and graphics adaptation are host owned. The native authored glass path is opt-in while its cost and full-scene color match are evaluated. |
 | Time of day | WorldOS `world-daylight.js` owns the room key palette, position and intensity for both renderers. Native `native_world_sun.mjs` projects the clock into the grid's sun-grade uniforms. The native jar uses the authored warm floor pool and local point light at night. |
-| Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. |
+| Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. The native frame pump advances Three's animation callbacks so the GPU skeleton palette follows the simulation. |
 | Encyclopedia body | WorldOS `world-book-rig.js` constructs the browser and native cover, spine, page stack and hinge. The browser still owns print, page motion and interaction. |
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
 | App launch, enter, leave, reveal and release | Native World sends requests over its inherited privileged SPAOS channel. |
@@ -39,7 +39,8 @@ an empty space releases it immediately because there is no preview to await.
   least every 24 frames for moving people. In repeated 1600×900 meadow plus
   11-avatar runs on this Linux GPU, settled authored windows ranged from
   41.3–48.6 ms p50 and 52.4–64.1 ms p95; the later physical run ranged from
-  46.0–48.5 ms p50 and 53.7–58.4 ms p95. These sequential runs do not establish
+  46.0–48.5 ms p50 and 53.7–58.4 ms p95. These runs preceded the GPU skeleton
+  fix. The sequential runs do not establish
   a stable material-only cost: frame time drifted during the experiment. An
   earlier version that captured every frame reached 74.1 ms p50. The authored
   mode has a visible dark rim and pale body in the current native scene; a
@@ -56,8 +57,11 @@ an empty space releases it immediately because there is no preview to await.
 - In earlier isolated 1600×900 Linux compositor runs with meadow and 11 sample
   avatars, the corrected shared frame kept every avatar visible. Settled
   120-frame intervals ranged from 28.06–34.15 ms p50 and 34.32–40.14 ms p95
-  across two runs (render time 22.45–27.63 ms p50). The sustained follow-up
-  above was slower, so the current benchmark is sensitive to machine state.
+  across two runs (render time 22.45–27.63 ms p50). Those runs preceded the
+  native frame-pump fix and did not animate the GPU skeletons. After the fix,
+  settled live tty2 120-frame windows at 1600×900 with meadow and 11 people
+  measured about 33 ms p50 and 34 ms p95. The sustained follow-up
+  above was slower, so the benchmark remains sensitive to machine state.
   Boot-time model loading produces much
   longer outliers. Earlier
   lower-resolution runs measured about 22/25 ms p50/p95 with avatars and

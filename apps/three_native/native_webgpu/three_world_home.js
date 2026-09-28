@@ -12,6 +12,7 @@ import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
 import { createNativeMeadowScene } from './native_meadow_scene.js';
 import { createNativePeopleScene } from './native_people_scene.js';
+import { installNativeThreeFrameBridge } from './native_three_frame_bridge.mjs';
 import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
 import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
@@ -54,8 +55,7 @@ function nativeIconLoader(name, manifest) {
 // This is the real WorldOS grid material and tile geometry, hosted by Valdi.
 async function render() {
   globalThis.self = globalThis;
-  globalThis.requestAnimationFrame = () => 0;
-  globalThis.cancelAnimationFrame = () => {};
+  const advanceThreeFrame = installNativeThreeFrameBridge();
   globalThis.navigator = { gpu: RNWebGPU.gpu, userAgent: 'Valdi Linux' };
   if (typeof globalThis.AbortController === 'undefined') {
     globalThis.AbortController = class {
@@ -1133,6 +1133,7 @@ async function render() {
   async function draw() {
     if (stopped) return;
     const startedAt = performance.now();
+    advanceThreeFrame(startedAt);
     const interval = previousStart === null ? null : startedAt - previousStart;
     const wakeLate = scheduledFor === null ? null : startedAt - scheduledFor;
     previousStart = startedAt;

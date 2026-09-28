@@ -2,13 +2,13 @@ import * as THREE from 'three/webgpu';
 import { PROTOCOL_VERSION } from '@spaos/shell-protocol';
 import { createNativeText } from './native_shell_hud.js';
 import { createNativeSpaosShellProtocol } from './native_spaos_shell_protocol.mjs';
+import { installNativeThreeFrameBridge } from './native_three_frame_bridge.mjs';
 
 // SPAOS remains the compositor and owns all window and space operations.
 // This scene presents its snapshots and requests in a bounded floating dock.
 async function run() {
   globalThis.self = globalThis;
-  globalThis.requestAnimationFrame = () => 0;
-  globalThis.cancelAnimationFrame = () => {};
+  const advanceThreeFrame = installNativeThreeFrameBridge();
   globalThis.navigator = { gpu: RNWebGPU.gpu, userAgent: 'Valdi Linux shell' };
 
   const adapter = await RNWebGPU.gpu.requestAdapter();
@@ -207,6 +207,7 @@ async function run() {
 
   async function draw() {
     if (stopped) return;
+    advanceThreeFrame(performance.now());
     const lines = __nativeShellPoll();
     if (lines) {
       if (!state.ready) __webgpuSurfaceStage(`Native Space UI received ${lines.length} shell bytes`);
