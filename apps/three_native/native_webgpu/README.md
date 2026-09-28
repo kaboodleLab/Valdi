@@ -96,7 +96,11 @@ arithmetic follows WorldOS `ground-scenes.js`; 25,921 terrain vertices and
 331,776 tapered blade instances draw in 36 culled patches. SPAOS's current
 tile cells clear the grass, and the live jar cell moves the lowland. The native
 adapter currently rebuilds geometry when floor occupancy changes and has no
-production wind, shader caches, theme transitions, lighting or shadow pass.
+production wind, shader caches, theme transitions or shadow pass. The native
+World samples the local clock and feeds WorldOS's elevation palette, floor
+luminance, gradient direction and footprint into the shared grid material;
+the meadow's ambient and key lights follow its day/night value. This does not
+yet include the production sun and moon bodies or their full lighting rig.
 The grid remains the default for an unprefixed bundle. The meadow-enabled v12
 runtime is running on Linux tty2 at 2880×1800: steady frame interval p50
 16.6 ms and p95 17.3–17.6 ms across several 120-frame windows. The isolated

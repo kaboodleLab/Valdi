@@ -9,6 +9,7 @@ import { createNativePeopleScene } from './native_people_scene.js';
 import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
 import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
+import { worldSunGrade } from './native_world_sun.mjs';
 
 function nativeIconLoader(name, manifest) {
   const loader = new GLTFLoader();
@@ -96,7 +97,8 @@ async function render() {
   renderer.toneMapping = THREE.NoToneMapping;
   const homeBackground = meadow ? new THREE.Color(0x13210e) : core.COL_BG;
   scene.background = homeBackground;
-  scene.add(new THREE.AmbientLight(0xffffff, 1.2));
+  const ambient = new THREE.AmbientLight(0xffffff, 1.2);
+  scene.add(ambient);
   const light = new THREE.DirectionalLight(0xffffff, 2.5);
   light.position.set(-2, 3, 4);
   scene.add(light);
@@ -113,11 +115,35 @@ async function render() {
   uniforms.uCamPos.value.copy(camera.position);
   uniforms.uFlatK.value = 0;
   uniforms.uTiles3D.value = 1;
-  uniforms.uNight.value = .78;
-  uniforms.uSunLum.value = .38;
-  uniforms.uSunAmt.value = .7;
-  uniforms.uSunTintA.value.setRGB(.48, .57, .81);
-  uniforms.uSunTintB.value.setRGB(.72, .53, .77);
+  function applyWorldLight() {
+    const now = new Date();
+    const hour = globalThis.__nativeWorldHour ??
+      now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    const grade = worldSunGrade(hour, camera.position.x, camera.position.z);
+    uniforms.uNight.value = grade.night;
+    uniforms.uSunLum.value = grade.lum;
+    uniforms.uSunAmt.value = grade.amount;
+    uniforms.uSunTintA.value.setRGB(...grade.tintA);
+    uniforms.uSunTintB.value.setRGB(...grade.tintB);
+    uniforms.uSunTint.value.setRGB(
+      (grade.tintA[0] + grade.tintB[0]) * .5,
+      (grade.tintA[1] + grade.tintB[1]) * .5,
+      (grade.tintA[2] + grade.tintB[2]) * .5);
+    uniforms.uSunGradDir.value.set(...grade.direction);
+    uniforms.uSunGrid.value.set(...grade.sunGrid);
+    uniforms.uSunSplit.value = grade.split;
+    uniforms.uSunPool.value = grade.pool;
+    // Three's meadow meshes use native lights; the grid receives the exact
+    // WorldOS grade above. Keep the meadow legible throughout the night.
+    ambient.intensity = 1.0 + .2 * (1 - grade.night);
+    light.intensity = 1.8 + .7 * (1 - grade.night);
+    light.color.setRGB(...grade.tintB).multiplyScalar(1.3);
+    if (meadow) homeBackground.setRGB(
+      .013 + .016 * (1 - grade.night),
+      .023 + .043 * (1 - grade.night),
+      .007 + .013 * (1 - grade.night));
+  }
+  applyWorldLight();
 
   const tileMaterial = new THREE.MeshPhysicalMaterial({
     color: core.COL_GRID_FILL.clone(), roughness: core.TILE.ROUGH,
@@ -993,7 +1019,10 @@ async function render() {
     const wakeLate = scheduledFor === null ? null : startedAt - scheduledFor;
     previousStart = startedAt;
     people.tick(Math.min(.1, (interval ?? 16) / 1000));
-    if (frame % 60 === 0) pollPeopleRoster();
+    if (frame % 60 === 0) {
+      pollPeopleRoster();
+      applyWorldLight();
+    }
     const floorChanged = pollWorldChannel();
     pollAgentChannel();
     if (floorChanged || pendingIconRefresh || frame % 60 === 0 ||
