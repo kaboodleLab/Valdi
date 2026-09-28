@@ -230,7 +230,10 @@ clock, Back button and app launcher over the Three scene. Back and launcher
 use WorldOS's authored control artwork. Clicking free ground opens the launcher
 for that exact tile; the launcher button finds nearby free ground. A pick
 rechecks occupancy before asking SPAOS to open the app. Up/Down select launcher
-rows, Left/Right change pages, and Enter opens the selected app. Clicking an
+rows, Left/Right change pages, and Enter opens the selected app. Typing while
+the launcher is open filters SPAOS's authenticated catalog by name or key;
+Backspace edits the search. A search with no matches shows an empty result.
+Clicking an
 occupied floor tile enters its space. Escape or Back leaves the active space;
 after leaving, the renderer waits for a newer preview before releasing SPAOS's
 departing window. With the launcher closed, the wheel zooms, arrow keys pan,
@@ -336,6 +339,18 @@ A scripted click on tile `(9,0)`, keyboard selection of Calculator, and an
 visible apps over the private World channel. The final C++ bridge and asset
 reader rebuilt successfully on Linux, and the rebuilt binary passed the GPU
 fixtures. Physical wheel and key injection remain to be checked interactively.
+
+`test_native_app_search.py` sends a synthetic three-app catalog over a private
+World channel, types a search into the native launcher, and checks that Enter
+requests Calculator rather than its neighboring Calendar entry. It passed on
+the Linux GPU with the compiled host and prepared assets:
+
+```sh
+XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-2 \
+  python3 apps/three_native/native_webgpu/test_native_app_search.py \
+  bazel-bin/apps/three_native/three_native_linux_webgpu_surface_probe \
+  /path/to/native-world-runtime/world.js /path/to/native-world-runtime/assets
+```
 
 This is still a focused native WorldOS shell slice hosted by ValdiLinux's
 Hermes runtime, rather than a Valdi custom view or a full port of `World.html`.

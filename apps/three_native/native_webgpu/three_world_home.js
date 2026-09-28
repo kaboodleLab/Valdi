@@ -828,6 +828,7 @@ async function render() {
     }
     cameraManuallyPlaced = true;
   };
+  globalThis.__worldTextInput = text => hud.text(text);
   globalThis.__worldPointer = (x, y, clicked) => {
     if (clicked && frameTiming) pendingInputs.push({
       sequence: ++inputSequence, at: performance.now(), afterFrame: frame,

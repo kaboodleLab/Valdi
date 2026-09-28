@@ -292,6 +292,8 @@ int main(int argc, char** argv) {
         SDL_Quit();
         return 1;
     }
+    if (interactive && !shellClient && !SDL_StartTextInput(window))
+        std::fprintf(stderr, "SDL_StartTextInput: %s\n", SDL_GetError());
     SDL_PropertiesID properties = SDL_GetWindowProperties(window);
     void* display = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_DISPLAY_POINTER, nullptr);
     void* wlSurface = SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WAYLAND_SURFACE_POINTER, nullptr);
@@ -704,6 +706,7 @@ int main(int argc, char** argv) {
                         case SDLK_HOME: navigation = "recenter"; break;
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER: navigation = "enter"; break;
+                        case SDLK_BACKSPACE: navigation = "backspace"; break;
                         case SDLK_F5:
                             if (event.key.mod & SDL_KMOD_CTRL) navigation = "restart";
                             break;
@@ -720,6 +723,18 @@ int main(int argc, char** argv) {
                                     facebook::jsi::String::createFromUtf8(*js, navigation), amount);
                         });
                 }
+            }
+            if (interactive && event.type == SDL_EVENT_TEXT_INPUT && !shellClient &&
+                event.text.text[0] != '\0') {
+                const std::string input(event.text.text);
+                runtime->dispatchSynchronouslyOnJsThread(STRING_LITERAL("world_home_text_input"),
+                    [&](Valdi::JavaScriptEntryParameters& entry) {
+                        auto* js = entry.jsContext.getJsiRuntime();
+                        auto handler = js->global().getProperty(*js, "__worldTextInput");
+                        if (handler.isObject())
+                            handler.asObject(*js).asFunction(*js).call(*js,
+                                facebook::jsi::String::createFromUtf8(*js, input));
+                    });
             }
             if (interactive && (event.type == SDL_EVENT_MOUSE_MOTION ||
                                 event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)) {
