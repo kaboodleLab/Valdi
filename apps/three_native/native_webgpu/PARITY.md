@@ -34,6 +34,9 @@ an empty space releases it immediately because there is no preview to await.
   production body, while print and motion remain browser-owned. It is not a
   reusable WorldOS home scene owner. The production owners are in `02-stage-and-camera.js`,
   `08-jar.js`, `20-holes-and-labels.js`, and `characters.js`.
+  The browser book's active flag and tile live in `20-holes-and-labels.js` and
+  are not `world.json` book props on this WorldOS revision. A native renderer
+  driven only by saved props cannot infer when the real Home book is present.
 - The production jar shader is shared, but the native authored mode uses a
   half-resolution scene capture refreshed on state or camera changes and at
   least every 24 frames for moving people. In repeated 1600×900 meadow plus
@@ -72,8 +75,9 @@ an empty space releases it immediately because there is no preview to await.
 
 Extend the shared camera/rig leaf into a WorldOS-owned Home scene factory,
 following `native-grid-scene.js`. It should accept authored
-state and return scene nodes, update hooks, picking targets, and a disposal
-function. The browser World should consume the same factory first; then the
+state, including transient book/well presence, and return scene nodes, update
+hooks, picking targets, and a disposal function. The browser World should
+consume the same factory first; then the
 native bundle can import it through `build_world_runtime.sh`. Keep SPAOS's
 space and window protocol separate from scene creation. This avoids growing a
 second hand-copied World inside Valdi.
