@@ -1,6 +1,8 @@
 import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
+import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
 import { TEAM } from '@worldos/people-roster';
 import { createCharacterWorld } from '@worldos/character-world';
+import { WORLD_BOOK, createWorldBookRig } from '@worldos/world-book-rig';
 
 // A separate WorldOS scene lane. Keep its assets, visibility and camera state
 // behind one boundary so the home floor can keep receiving SPAOS updates while
@@ -152,30 +154,29 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
   }
   const library = portal(-.15, -.18, 'BOOKS');
   portal(.25, 1.35, 'MEMORIES', true);
-  // A narrow native model of the closed book in 20-holes-and-labels.js. Its
-  // readable pages, curling shader and interactions still belong to WorldOS.
-  const book = new THREE.Group();
+  // The People portal shows the same closed geometry as the browser's
+  // encyclopedia. Page print, curling and focus motion stay with its owner.
+  const linen = new THREE.MeshStandardMaterial({ color: 0x5b1f22, roughness: .86 });
+  const paper = new THREE.MeshStandardMaterial({ color: 0xf7f2e6, roughness: 1,
+    side: THREE.DoubleSide });
+  const bookRig = createWorldBookRig(THREE, {
+    makeLinenMaterial: () => linen,
+    makePageMaterial: () => ({ mat: paper }),
+    edgeMaterial: new THREE.MeshLambertMaterial({ color: 0xece2c8 }),
+    RoundedBoxGeometry,
+  });
+  const book = bookRig.group;
+  book.position.set(WORLD_BOOK.closedXOffset, .055, 0);
   book.rotation.y = -.18;
   library.add(book);
-  const cover = new THREE.MeshStandardMaterial({ color: 0x46513b, roughness: .82 });
-  const spine = new THREE.MeshStandardMaterial({ color: 0x354131, roughness: .88 });
-  const pages = new THREE.MeshStandardMaterial({ color: 0xece2c8, roughness: 1 });
-  const gold = new THREE.MeshStandardMaterial({ color: 0xbba376, roughness: .62,
-    metalness: .16 });
-  function bookBox(w, h, d, y, material, x = 0) {
-    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
-    mesh.position.set(x, y, 0);
-    book.add(mesh);
-    return mesh;
-  }
-  bookBox(.52, .025, .64, .055, cover);
-  bookBox(.49, .07, .61, .102, pages);
-  bookBox(.52, .025, .64, .15, cover);
-  bookBox(.045, .125, .64, .103, spine, -.26);
-  const crest = new THREE.Mesh(new THREE.RingGeometry(.065, .08, 32), gold);
-  crest.rotation.x = -Math.PI / 2;
-  crest.position.y = .164;
-  book.add(crest);
+  const title = makeText('ENCYCLOPEDIA', [214, 178, 108]);
+  const titleMesh = new THREE.Mesh(new THREE.PlaneGeometry(.31, .05),
+    new THREE.MeshBasicMaterial({ map: title.texture, transparent: true,
+      depthWrite: false, toneMapped: false }));
+  titleMesh.rotation.x = -Math.PI / 2;
+  titleMesh.position.set(WORLD_BOOK.width / 2 + WORLD_BOOK.spineWidth * .4,
+    WORLD_BOOK.coverThickness / 2 + .002, 0);
+  bookRig.frontPivot.add(titleMesh);
 
   function modelFor(name) {
     if (models.has(name)) return Promise.resolve(models.get(name));

@@ -19,6 +19,7 @@ an empty space releases it immediately because there is no preview to await.
 | Jar glass and contact-shadow shaders | WorldOS `world-jar-materials.js`; browser and native import the same factories. Native scene capture and graphics adaptation are host owned. The native authored glass path is opt-in while its cost and full-scene color match are evaluated. |
 | Time of day | WorldOS `world-daylight.js` owns the room key palette, position and intensity for both renderers. Native `native_world_sun.mjs` projects the clock into the grid's sun-grade uniforms. The native jar uses the authored warm floor pool and local point light at night. |
 | Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. |
+| Encyclopedia body | WorldOS `world-book-rig.js` constructs the browser and native cover, spine, page stack and hinge. The browser still owns print, page motion and interaction. |
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
 | App launch, enter, leave, reveal and release | Native World sends requests over its inherited privileged SPAOS channel. |
 | Space dock and app controls | Native Space UI sends bounded requests through its Shell controller; SPAOS checks the latest snapshot. |
@@ -27,10 +28,11 @@ an empty space releases it immediately because there is no preview to await.
 
 - Home composition differs visibly. The native meadow and jar demonstration
   now shares the production camera basis and Home framing law, but does not
-  reproduce the production room's book, well, lighting,
+  reproduce the production room's book, well,
   status controls, and bottom orb. `native_people_scene.js` contains a small
-  book/well approximation for its People view; that is not a reusable WorldOS
-  home scene owner. The production owners are in `02-stage-and-camera.js`,
+  book/well display for its People view; its closed book now uses the shared
+  production body, while print and motion remain browser-owned. It is not a
+  reusable WorldOS home scene owner. The production owners are in `02-stage-and-camera.js`,
   `08-jar.js`, `20-holes-and-labels.js`, and `characters.js`.
 - The production jar shader is shared, but the native authored mode uses a
   half-resolution scene capture refreshed on state or camera changes and at
