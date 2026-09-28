@@ -14,3 +14,9 @@ export function beginReturnFromFloor(activeSpace, returningSpace, spaces,
       cards.get(activeSpace)?.generation || 0),
   };
 }
+
+export function canReleaseReturn(returningSpace, space, card) {
+  return returningSpace?.id === space?.id && space.active === false &&
+    (space.windows === 0 || (Number.isInteger(space.windows) &&
+      space.windows > 0 && card?.generation > returningSpace.generation));
+}

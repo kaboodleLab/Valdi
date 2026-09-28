@@ -317,7 +317,8 @@ GLB (about 53 MiB) can load when needed.
   for Hermes. The JavaScript reveal path covers frames that read a floor event
   first. On return, `native_world_return.mjs` detects both Back and SPAOS dock
   switches and releases the departing space after a newer window preview has
-  been installed on the native tile. SPAOS deadlines remain crash fallbacks.
+  been installed on the native tile, or immediately if its last window closed.
+  SPAOS deadlines remain crash fallbacks.
 
 On the Linux host, an isolated SPAOS session delivered its actual app catalog
 to Hermes and opened the native launcher. A second isolated session

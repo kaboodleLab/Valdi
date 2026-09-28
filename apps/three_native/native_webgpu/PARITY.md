@@ -7,7 +7,8 @@ transparent Three Space UI surface. A real Calculator opened from the native
 launcher, mapped in its own SPAOS space, and returned through both the SPAOS
 World dock and World's Back button on 2026-09-28. Space and window arrival
 holds were revealed before their one-second deadlines; the departing space
-was released after a fresh preview, before its two-second deadline.
+was released after a fresh preview, before its two-second deadline. Leaving
+an empty space releases it immediately because there is no preview to await.
 
 ## What is shared today
 

@@ -11,7 +11,7 @@ import { chooseLaunchTile } from './native_world_placement.mjs';
 import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
 import { worldSunGrade } from './native_world_sun.mjs';
 import { createNativeArrivalReveal } from './native_world_arrival.mjs';
-import { beginReturnFromFloor } from './native_world_return.mjs';
+import { beginReturnFromFloor, canReleaseReturn } from './native_world_return.mjs';
 
 function nativeIconLoader(name, manifest) {
   const loader = new GLTFLoader();
@@ -700,11 +700,11 @@ async function render() {
       const appName = appIconName(space.apps?.[0] || space.pending);
       const showStandIn = !cardCells.has(cellKey) && !homeIconCells.has(cellKey);
       syncFloorStandIn(space.id, appName, space.at.x, space.at.z, showStandIn);
-      if (returningSpace?.id === space.id && !space.active &&
-          card?.generation > returningSpace.generation &&
+      if (canReleaseReturn(returningSpace, space, card) &&
           typeof __nativeWorldRelease === 'function' &&
           __nativeWorldRelease(space.id)) {
-        __webgpuSurfaceStage(`WorldOS released space ${space.id} after preview update`);
+        __webgpuSurfaceStage(`WorldOS released space ${space.id} after ` +
+          (space.windows === 0 ? 'last window closed' : 'preview update'));
         returningSpace = null;
       }
       const jarAtCell = isCell(layout.jar) && layout.jar[0] === space.at.x &&

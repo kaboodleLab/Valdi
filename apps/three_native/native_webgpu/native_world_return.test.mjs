@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { beginReturnFromFloor } from './native_world_return.mjs';
+import { beginReturnFromFloor, canReleaseReturn } from './native_world_return.mjs';
 
 test('dock return tracks the previous preview until a newer one is ready', () => {
   const previews = new Map([[1, 2]]);
@@ -17,4 +17,14 @@ test('ordinary floor changes do not start a return', () => {
     [{ id: 1, active: false, lingering: false }], empty, empty), null);
   assert.equal(beginReturnFromFloor(1, null,
     [{ id: 1, active: true, lingering: false }], empty, empty), null);
+});
+
+test('empty departing spaces release immediately; occupied spaces wait for a newer preview', () => {
+  const returning = { id: 2, generation: 4 };
+  assert.equal(canReleaseReturn(returning, { id: 2, active: false, windows: 0 }, null), true);
+  assert.equal(canReleaseReturn(returning, { id: 2, active: false, windows: 1 },
+    { generation: 4 }), false);
+  assert.equal(canReleaseReturn(returning, { id: 2, active: false, windows: 1 },
+    { generation: 5 }), true);
+  assert.equal(canReleaseReturn(returning, { id: 2, active: true, windows: 0 }, null), false);
 });
