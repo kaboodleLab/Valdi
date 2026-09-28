@@ -1,5 +1,7 @@
 // Camera-fixed typed conversation for Hermes. The agent and SPAOS own the
 // conversation and actions; this layer only presents input and returned text.
+import { wrapNativeReply } from './native_conversation_wrap.mjs';
+
 export function createNativeConversationHud({ THREE, scene, camera, makeText, onSubmit }) {
   const root = new THREE.Group();
   camera.add(root);
@@ -12,7 +14,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
   const labels = [];
   let width = 720, height = 720, units = 1;
   let focus = false, text = '', answer = 'ASK WORLDOS', ready = false;
-  let awaiting = false;
+  let awaiting = false, answerScroll = 0;
   let activeInputId = null, partial = '', lastPartialDraw = 0;
   const panelWidth = () => Math.max(180, Math.min(600, width - 170));
   const panelTop = () => height - 145;
@@ -31,19 +33,8 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     root.add(mesh);
     labels.push({ mesh, texture });
   }
-  function lines(value, limit = 50) {
-    const words = String(value || '').replace(/\s+/g, ' ').trim().split(' ');
-    const rows = [];
-    let row = '';
-    for (const word of words) {
-      if (!word) continue;
-      if (row && row.length + word.length + 1 > limit) { rows.push(row); row = ''; }
-      row += (row ? ' ' : '') + word;
-      if (row.length >= limit) { rows.push(row.slice(0, limit)); row = ''; }
-    }
-    if (row) rows.push(row);
-    return rows.slice(-3);
-  }
+  const rowLimit = () => Math.max(16, Math.floor((panelWidth() - 50) / 12.5));
+  const answerRows = () => wrapNativeReply(answer, rowLimit());
   function redraw() {
     for (const { mesh, texture } of labels) {
       root.remove(mesh); texture.dispose(); mesh.material.dispose(); mesh.geometry.dispose();
@@ -55,8 +46,13 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     const left = (width - panel) / 2 + 18;
     addLabel(ready ? 'WORLDOS' : 'WORLDOS OFFLINE', left, panelTop() + 17, 13,
       ready ? [182, 214, 190] : [218, 170, 148]);
-    lines(answer, Math.max(18, Math.floor((panel - 35) / 8.5))).forEach((row, index) =>
-      addLabel(row, left, panelTop() + 37 + index * 17, 14, [242, 241, 237]));
+    const rows = answerRows();
+    const start = Math.max(0, rows.length - 3 - answerScroll);
+    if (rows.length > 3 && panel > 300)
+      addLabel(`${start + 1}-${Math.min(start + 3, rows.length)}/${rows.length}  UP/DOWN`,
+        left + panel - 178, panelTop() + 17, 11, [183, 187, 192]);
+    rows.slice(start, start + 3).forEach((row, index) =>
+      addLabel(row, left, panelTop() + 37 + index * 17, 17, [242, 241, 237]));
     const input = text ? text.slice(-Math.max(18, Math.floor((panel - 45) / 8.5))) :
       (focus ? 'TYPE A MESSAGE...' : 'CLICK HERE TO ASK');
     addLabel(`${focus ? '> ' : ''}${input}${focus ? '_' : ''}`, left,
@@ -68,7 +64,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     text = '';
     answer = ready ? 'THINKING...' : 'THE WORLDOS MIND IS OFFLINE';
     awaiting = ready;
-    partial = '';
+    partial = ''; answerScroll = 0;
     redraw();
     if (ready) {
       activeInputId = onSubmit(said);
@@ -104,7 +100,15 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
       if (!focus) return false;
       if (kind === 'enter') return submit();
       if (kind === 'backspace') { text = [...text].slice(0, -1).join(''); redraw(); return true; }
+      if (kind === 'up' || kind === 'down') return this.scroll(kind === 'up' ? 1 : -1);
       return false;
+    },
+    scroll(amount) {
+      if (!focus) return false;
+      const available = Math.max(0, answerRows().length - 3);
+      answerScroll = Math.max(0, Math.min(available, answerScroll + Math.sign(amount)));
+      redraw();
+      return true;
     },
     setReady(value) {
       if (ready === !!value) return;
@@ -120,6 +124,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
           typeof value !== 'string' || !value) return;
       partial = (partial + value).slice(-8000);
       answer = partial;
+      answerScroll = 0;
       const now = Date.now();
       if (now - lastPartialDraw >= 80) { lastPartialDraw = now; redraw(); }
     },
@@ -135,7 +140,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     say(value) {
       answer = String(value || '').trim() || 'NO REPLY';
       awaiting = false;
-      activeInputId = null; partial = '';
+      activeInputId = null; partial = ''; answerScroll = 0;
       redraw();
     },
     isFocused: () => focus,

@@ -105,7 +105,8 @@ The same companion now carries the production WorldOS mind socket over a
 second private Unix socket. It closes its inherited SPAOS World descriptor;
 only the Valdi host can call the compositor. The native World presents an
 authenticated, generation-bound app catalog to the mind and shows a typed
-conversation field over its Three scene. A mind action returns to the Valdi
+conversation field over its Three scene. Long replies retain every wrapped
+line; Up/Down or the wheel scrolls a focused reply. A mind action returns to the Valdi
 host and crosses SPAOS's World channel, where SPAOS checks the installed owner,
 stamps provenance and applies its normal app Verb policy. Headless service
 calls use SPAOS's separate service call type. The native renderer receives no
@@ -454,7 +455,9 @@ World and SPAOS Shell, and sends a reply back to the renderer. With
 and State volume starts a real agent service and verifies its authenticated
 World handshake. Both passed on Linux. The temporary service has no model key;
 the live tty2 service reported Hermes ready and answered a typed app question
-through the native chat field.
+through the native chat field. The v7 runtime passed the isolated agent-call
+test, then a live Hermes reply on tty2 and keyboard scrolling were checked
+with screenshots.
 The Electron argument must be the exact installed executable path used in the
 Package Manager launch records; a CLI shim changes the launch digest and correctly
 causes the catalog to reject those app presentations.

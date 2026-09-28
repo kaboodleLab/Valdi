@@ -878,6 +878,7 @@ async function render() {
     if (kind === 'restart') { lifecycle.restart(); return; }
     if (hud.key(kind === 'recenter' ? 'home' : kind)) return;
     if (conversation.key(kind)) return;
+    if (kind === 'zoom' && conversation.scroll(amount)) return;
     if (people.isOpen()) {
       if (kind === 'recenter') setPeopleOpen(false);
       return;
