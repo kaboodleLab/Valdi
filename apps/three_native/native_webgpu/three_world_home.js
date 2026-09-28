@@ -4,6 +4,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
+import { createNativeMeadowScene } from './native_meadow_scene.js';
 import { createNativePeopleScene } from './native_people_scene.js';
 import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
@@ -86,8 +87,15 @@ async function render() {
   grid.rotation.x = -Math.PI / 2;
   grid.position.y = -.002;
   homeRoot.add(grid);
+  const meadow = globalThis.__nativeWorldGround === 'meadow' ?
+    createNativeMeadowScene(THREE) : null;
+  if (meadow) {
+    homeRoot.add(meadow.root);
+    __webgpuSurfaceStage(`WorldOS native meadow prepared: ${JSON.stringify(meadow.stats())}`);
+  }
   renderer.toneMapping = THREE.NoToneMapping;
-  scene.background = core.COL_BG;
+  const homeBackground = meadow ? new THREE.Color(0x13210e) : core.COL_BG;
+  scene.background = homeBackground;
   scene.add(new THREE.AmbientLight(0xffffff, 1.2));
   const light = new THREE.DirectionalLight(0xffffff, 2.5);
   light.position.set(-2, 3, 4);
@@ -339,7 +347,7 @@ async function render() {
       extent = homeExtent;
       people.leave();
       homeRoot.visible = true;
-      scene.background = core.COL_BG;
+      scene.background = homeBackground;
       camera.position.copy(center).add(cameraOffset);
       camera.lookAt(center);
       uniforms.uCamPos.value.copy(camera.position);
@@ -784,6 +792,10 @@ async function render() {
     appAtCell = nextAppAtCell;
     previewGenerationBySpace = nextPreviewGenerationBySpace;
     occupiedCells = nextOccupiedCells;
+    if (meadow) {
+      meadow.setOccupiedCells(nextOccupiedCells);
+      if (jar.visible) meadow.setHole(jarX, jarZ);
+    }
     if (snapshotChanged)
       __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jar.visible)} app cells, jar ${jar.visible}`);
   }

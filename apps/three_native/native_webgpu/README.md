@@ -89,6 +89,18 @@ reframes the camera around them. Pause Wandering calls the shared character
 simulation's pause door. The panel marks simulated and live presence distinctly.
 Gestures, conversations and portal interactions are still browser-World features.
 The SPAOS floor and app channel continue updating while People is open.
+
+An opt-in `globalThis.__nativeWorldGround = 'meadow'` bundle prefix now selects
+a bounded native Rolling meadow adapter. Its hill, seed, lowland and color-noise
+arithmetic follows WorldOS `ground-scenes.js`; 25,921 terrain vertices and
+331,776 tapered blade instances draw in 36 culled patches. SPAOS's current
+tile cells clear the grass, and the live jar cell moves the lowland. The native
+adapter currently rebuilds geometry when floor occupancy changes and has no
+production wind, shader caches, theme transitions, lighting or shadow pass.
+The grid remains the default for an unprefixed bundle. The meadow-enabled v9
+runtime is running on Linux tty2 at 2880×1800: steady frame interval p50
+16.6 ms and p95 17.3–17.6 ms across several 120-frame windows. The isolated
+SPAOS mind-call test and a live typed Hermes reply passed with that scene.
 When `SPAOS_WORLD_OS_ROOT` points to the WorldOS tree of the running SPAOS
 agent service and `SPAOS_AGENT_SERVICE=1`, `run_spaos_world.sh` starts a
 companion process with the native host. It authenticates through SPAOS's
