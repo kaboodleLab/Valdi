@@ -11,6 +11,7 @@ import { createHomeMaterial } from '@worldos/home-material';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
 import { createNativeMeadowScene } from './native_meadow_scene.js';
+import { createNativeHomeBookScene } from './native_home_book_scene.js';
 import { createNativePeopleScene } from './native_people_scene.js';
 import { installNativeThreeFrameBridge } from './native_three_frame_bridge.mjs';
 import { projectPeopleRoster } from './native_people_roster.mjs';
@@ -290,6 +291,8 @@ async function render() {
   let spaceAtCell = new Map();
   let appAtCell = new Map();
   let occupiedCells = new Set();
+  const homeBook = createNativeHomeBookScene({ THREE, root: homeRoot,
+    gridY: core.TILE.H, makeText, tileGeometry, tileMaterial });
   let activeSpace = null;
   // A click can enter a space before the next floor snapshot reaches us.
   let requestedSpace = null;
@@ -457,6 +460,18 @@ async function render() {
     onPeople: () => {
       if (people.isOpen()) hud.togglePeoplePanel();
       else setPeopleOpen(true);
+    },
+    onBook: () => {
+      const tile = homeBook.tile ? null :
+        chooseLaunchTile(null, occupiedCells, center);
+      if (!homeBook.tile && !tile) return;
+      homeBook.toggle(tile);
+      seenRevision = null;
+      applyLiveState();
+      refractDirty = true;
+      __webgpuSurfaceStage(tile ?
+        `WorldOS Home book appeared at (${tile.x},${tile.z})` :
+        'WorldOS Home book dismissed');
     },
     onSelectPerson: id => people.select(id),
     onFindPerson: id => people.focus(id),
@@ -871,6 +886,10 @@ async function render() {
           Number.isInteger(prop.tz)) includeCell(prop.tx, prop.tz);
     }
     if (jarRig.tiltGroup.visible) includeCell(jarX, jarZ);
+    if (homeBook.tile) {
+      includeCell(homeBook.tile.x, homeBook.tile.z);
+      nextOccupiedCells.add(`${homeBook.tile.x},${homeBook.tile.z}`);
+    }
     if (allCells.length && !cameraManuallyPlaced) {
       const frameItems = allCells.map(([x, z]) => ({ x, z }));
       if (globalThis.__nativeWorldPeopleOnHome === true) {
@@ -1087,6 +1106,15 @@ async function render() {
     }
     pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
     raycaster.setFromCamera(pointerNdc, camera);
+    if (clicked && homeBook.tile &&
+        raycaster.intersectObject(homeBook.group, true).length) {
+      homeBook.toggle(null);
+      seenRevision = null;
+      applyLiveState();
+      refractDirty = true;
+      __webgpuSurfaceStage('WorldOS Home book dismissed');
+      return;
+    }
     if (clicked && globalThis.__nativeWorldPeopleOnHome === true) {
       const person = people.pick(raycaster) ||
         people.pickScreen(x, y, surfaceWidth, surfaceHeight);
@@ -1138,6 +1166,7 @@ async function render() {
     const wakeLate = scheduledFor === null ? null : startedAt - scheduledFor;
     previousStart = startedAt;
     people.tick(Math.min(.1, (interval ?? 16) / 1000));
+    homeBook.update(Math.min(.1, (interval ?? 16) / 1000));
     if (frame % 60 === 0) {
       pollPeopleRoster();
       applyWorldLight();

@@ -100,7 +100,7 @@ export function createNativeText(THREE, manifest, readAsset) {
 }
 
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
-  onBack, onPeople, onOpen, onSelectPerson, onFindPerson, onPausePeople,
+  onBack, onPeople, onBook, onOpen, onSelectPerson, onFindPerson, onPausePeople,
   allowHomePeoplePanel = false, stage,
   makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
@@ -196,11 +196,13 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   }
   const backPlate = roundPlate(42);
   const peoplePlate = roundPlate(48);
+  const bookPlate = roundPlate(48);
   const launcherPlate = roundPlate(48);
   const back = artwork('back', 36);
   if (back) back.scale.x = -back.scale.x;
   const launcher = artwork('launcher', 38);
   const peopleText = label('PEOPLE', 0, 0, 12, [50, 49, 54], 'center');
+  const bookText = label('BOOK', 0, 0, 12, [50, 49, 54], 'center');
   const peopleMark = label('SAMPLE PEOPLE', 0, 0, 10, [86, 84, 82], 'center');
   peopleMark.visible = false;
   const panel = plane(panelWidth, panelHeight, solid(0xf8f5f2, .94), 1001);
@@ -316,6 +318,8 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     place(backPlate, 41, 39);
     place(peoplePlate, 46, height - 46);
     place(peopleText, 46, height - 46);
+    place(bookPlate, width - 108, height - 46);
+    place(bookText, width - 108, height - 46);
     place(peopleMark, width / 2, 62);
     place(launcherPlate, width - 46, height - 46);
     if (back) place(back, 41, 39);
@@ -375,6 +379,12 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     if (x >= 18 && x <= 74 && y >= height - 74 && y <= height - 18) {
       if (open) show(false);
       onPeople?.();
+      return true;
+    }
+    if (x >= width - 138 && x <= width - 78 &&
+        y >= height - 74 && y <= height - 18) {
+      if (open) show(false);
+      onBook?.();
       return true;
     }
     if (peopleOpen) {

@@ -19,7 +19,7 @@ an empty space releases it immediately because there is no preview to await.
 | Jar glass and contact-shadow shaders | WorldOS `world-jar-materials.js`; browser and native import the same factories. Native scene capture and graphics adaptation are host owned. The native authored glass path is opt-in while its cost and full-scene color match are evaluated. |
 | Time of day | WorldOS `world-daylight.js` owns the room key palette, position and intensity for both renderers. Native `native_world_sun.mjs` projects the clock into the grid's sun-grade uniforms. The native jar uses the authored warm floor pool and local point light at night. |
 | Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. The native frame pump advances Three's animation callbacks so the GPU skeleton palette follows the simulation. |
-| Encyclopedia body | WorldOS `world-book-rig.js` constructs the browser and native cover, spine, page stack and hinge. The browser still owns print, page motion and interaction. |
+| Encyclopedia body and Home pose | WorldOS `world-book-rig.js` constructs the browser and native cover, spine, page stack and hinge, and advances the transient presence/pose law in both hosts. Native Home now draws a closed book on a free tile from a local Book control. The browser still owns article print, page motion and full interaction. |
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
 | App launch, enter, leave, reveal and release | Native World sends requests over its inherited privileged SPAOS channel. |
 | Space dock and app controls | Native Space UI sends bounded requests through its Shell controller; SPAOS checks the latest snapshot. |
@@ -28,15 +28,18 @@ an empty space releases it immediately because there is no preview to await.
 
 - Home composition differs visibly. The native meadow and jar demonstration
   now shares the production camera basis and Home framing law, but does not
-  reproduce the production room's book, well,
-  status controls, and bottom orb. `native_people_scene.js` contains a small
-  book/well display for its People view; its closed book now uses the shared
-  production body, while print and motion remain browser-owned. It is not a
-  reusable WorldOS home scene owner. The production owners are in `02-stage-and-camera.js`,
+  reproduce the production room's well, status controls, and bottom orb.
+  Native Home can now show the shared closed book body and pose from explicit
+  transient state, with a native Book control; it does not yet open articles,
+  turn pages, or receive the browser's `book.open` action. `native_people_scene.js`
+  also contains a small book/well display for its People view. Neither is yet
+  a reusable WorldOS home scene owner. The production owners are in `02-stage-and-camera.js`,
   `08-jar.js`, `20-holes-and-labels.js`, and `characters.js`.
   The browser book's active flag and tile live in `20-holes-and-labels.js` and
   are not `world.json` book props on this WorldOS revision. A native renderer
   driven only by saved props cannot infer when the real Home book is present.
+  The native control owns its local transient presence until the World scene
+  action channel can deliver the same event to both hosts.
 - The production jar shader is shared, but the native authored mode uses a
   half-resolution scene capture refreshed on state or camera changes and at
   least every 24 frames for moving people. In repeated 1600×900 meadow plus
@@ -73,7 +76,7 @@ an empty space releases it immediately because there is no preview to await.
 
 ## Next extraction boundary
 
-Extend the shared camera/rig leaf into a WorldOS-owned Home scene factory,
+Extend the shared camera/rig/pose leaf into a WorldOS-owned Home scene factory,
 following `native-grid-scene.js`. It should accept authored
 state, including transient book/well presence, and return scene nodes, update
 hooks, picking targets, and a disposal function. The browser World should
