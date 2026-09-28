@@ -4,6 +4,8 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
 import { WORLD_HOME, createWorldJarRig, solveWorldHomeFrame,
   worldCameraPosition } from '@worldos/world-home-composition';
+import { createWorldJarGlassMaterial } from '@worldos/world-jar-glass';
+import { createHomeMaterial } from '@worldos/home-material';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
 import { createNativeMeadowScene } from './native_meadow_scene.js';
@@ -199,19 +201,38 @@ async function render() {
     __webgpuSurfaceStage(`WorldOS icon loaded: ${name}`);
   }
 
-  // The browser owns this exact wall profile and tilt/spin hierarchy. The
-  // native material remains a temporary physical-transmission adapter until
-  // WorldOS's scene-texture refraction can run here.
-  const jarRig = createWorldJarRig(THREE,
-    new THREE.MeshPhysicalMaterial({
-      color: 0xf0f8f8, side: THREE.DoubleSide, transmission: .9,
-      roughness: .09, metalness: 0, thickness: .045, ior: 1.46,
-      clearcoat: 1, clearcoatRoughness: .05, transparent: true,
-      opacity: .5, depthWrite: false,
-    }), { x: 1, z: 0 });
+  // The authored shader needs a scene capture and its native appearance and
+  // frame cost are still under evaluation. Keep it available for comparisons;
+  // use the established physical material by default.
+  const authoredGlass = globalThis.__nativeWorldJarMaterial === 'authored';
+  const refractTarget = authoredGlass ? new THREE.RenderTarget(
+    Math.max(2, Math.round(surfaceWidth / 2)),
+    Math.max(2, Math.round(surfaceHeight / 2)),
+    { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter },
+  ) : null;
+  const glassMat = authoredGlass ? createWorldJarGlassMaterial({ THREE,
+    makeMaterial: (kind, parameters) => createHomeMaterial({
+      THREE, nodes: THREE, tsl, kind,
+      exposure: core.TILE.EXPOSURE, ...parameters,
+    }),
+    sceneTexture: refractTarget.texture,
+    lightDir: core.KEY_DIR.clone(), glossGLSL: core.GLOSS_GLSL,
+  }) : new THREE.MeshPhysicalMaterial({
+    color: 0xf0f8f8, side: THREE.DoubleSide, transmission: .9,
+    roughness: .09, metalness: 0, thickness: .045, ior: 1.46,
+    clearcoat: 1, clearcoatRoughness: .05, transparent: true,
+    opacity: .5, depthWrite: false,
+  });
+  if (authoredGlass) glassMat.uniforms.uRes.value.set(surfaceWidth, surfaceHeight);
+  const jarRig = createWorldJarRig(THREE, glassMat, { x: 1, z: 0 });
   jarRig.tiltGroup.position.y = core.TILE.H + .02;
   homeRoot.add(jarRig.tiltGroup);
-  __webgpuSurfaceStage('WorldOS jar profile ready');
+  let refractDirty = true;
+  let lastRefractFrame = -24;
+  const refractCameraPosition = new THREE.Vector3();
+  const refractCameraRotation = new THREE.Quaternion();
+  let refractExtent = NaN;
+  __webgpuSurfaceStage(`WorldOS jar profile ready; material ${authoredGlass ? 'authored' : 'physical'}`);
 
   const layoutKey = {
     weather: 'weathersun', calendar: 'calendar', mail: 'mail',
@@ -356,6 +377,7 @@ async function render() {
     hud.setView(people.isOpen() ? 'people' : 'home', peopleSource === 'sample');
     if (globalThis.__nativeWorldPeopleOnHome === true && !cameraManuallyPlaced)
       seenRevision = null;
+    refractDirty = true;
     __webgpuSurfaceStage(`WorldOS People source: ${peopleSource}${rows ? ` (${rows.length} present)` : ''}`);
   }
   let homeExtent = extent;
@@ -855,6 +877,7 @@ async function render() {
     }
     if (snapshotChanged)
       __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jarRig.tiltGroup.visible)} app cells, jar ${jarRig.tiltGroup.visible}`);
+    if (snapshotChanged) refractDirty = true;
   }
 
   const raycaster = new THREE.Raycaster();
@@ -942,6 +965,12 @@ async function render() {
     camera.updateProjectionMatrix();
     hud.resize(width, height, extent);
     conversation.resize(width, height, extent);
+    if (refractTarget) {
+      refractTarget.setSize(Math.max(2, Math.round(width / 2)),
+        Math.max(2, Math.round(height / 2)));
+      glassMat.uniforms.uRes.value.set(width, height);
+      refractDirty = true;
+    }
     if (!cameraManuallyPlaced && !people.isOpen()) {
       seenRevision = null;
       applyLiveState();
@@ -992,6 +1021,7 @@ async function render() {
       people.faceCamera();
     }
     cameraManuallyPlaced = true;
+    refractDirty = true;
   };
   globalThis.__worldTextInput = text => hud.text(text) || conversation.text(text);
   globalThis.__worldPointer = (x, y, clicked) => {
@@ -1082,7 +1112,34 @@ async function render() {
       ((startedAt - waveStart) * waveUnitsPerMs) % 9.7, .46);
     uniforms.uWaveK.value.set(.42, .1, 1.25, 0);
     jarRig.spinGroup.rotation.y = (startedAt - animationStart) * jarRadiansPerMs;
+    if (authoredGlass) glassMat.uniforms.uCamPos.value.copy(camera.position);
     const updateEnd = frameTiming ? performance.now() : 0;
+    // The jar is small on Home. Refresh its scene texture for state/camera
+    // changes and periodically for wandering people; avoid a second full
+    // scene render on every frame.
+    if (refractTarget && jarRig.tiltGroup.visible && !people.isOpen() &&
+        (refractDirty || frame - lastRefractFrame >= 24 ||
+         !camera.position.equals(refractCameraPosition) ||
+         !camera.quaternion.equals(refractCameraRotation) ||
+         extent !== refractExtent)) {
+      const overlays = camera.children.map(child => [child, child.visible]);
+      const jarVisible = jarRig.jarMesh.visible;
+      jarRig.jarMesh.visible = false;
+      for (const [child] of overlays) child.visible = false;
+      try {
+        renderer.setRenderTarget(refractTarget);
+        renderer.render(scene, camera);
+      } finally {
+        renderer.setRenderTarget(null);
+        jarRig.jarMesh.visible = jarVisible;
+        for (const [child, visible] of overlays) child.visible = visible;
+      }
+      refractDirty = false;
+      lastRefractFrame = frame;
+      refractCameraPosition.copy(camera.position);
+      refractCameraRotation.copy(camera.quaternion);
+      refractExtent = extent;
+    }
     renderer.render(scene, camera);
     const renderEnd = frameTiming ? performance.now() : 0;
     let pixel = null;

@@ -76,8 +76,14 @@ The `three_scene.js` entry is an initial Three r186 bundle for that path.
 material, rounded tile geometry, Home camera/framing law and jar rig from the
 WorldOS engine. This entry loads seven authored GLBs, using
 the WorldOS Files stack's `assets/media/town/Box.glb` for Files. It also uses
-the production jar's lathe profile and tilt/spin hierarchy with a Three
-physical glass stand-in. When people stand on Home, their vertical bounds
+the production jar's lathe profile and tilt/spin hierarchy. The default jar
+uses a Three physical material; prefixing the bundle with
+`globalThis.__nativeWorldJarMaterial='authored';` selects WorldOS's shared
+`world-jar-glass.js` shader through its `home-material.js` graphics adapter.
+That mode captures the background at half resolution and refreshes it on
+scene/camera changes and at least every 24 frames while people wander. It is
+currently slower on the Linux test GPU; see `PARITY.md` for measurements and
+remaining visual work. When people stand on Home, their vertical bounds
 extend the shared camera fit so standing bodies stay inside the viewport.
 The home floor and People preview are separate scene groups. The bottom-left
 People control opens the eleven members of WorldOS's own `apps/people/roster.mjs`
@@ -169,9 +175,11 @@ containing `kernel/engine/native-grid-scene.js` and
 `WORLD_HOME_COMPOSITION_SOURCE` to the absolute path of the shared leaf.
 `WORLD_OS_ROOT` must have
 `kernel/engine/character-world.js` and the sibling `apps/people/roster.mjs`
-source. The Linux demo uses SPAOS
-`codex/world-native-scene-contract` at `52f5fa66`. That scene factory is not
-yet in SPAOS main. The shell bundle also reads the sibling SPAOS shell protocol
+source. The Linux demo uses SPAOS branch `codex/world-native-scene-contract`;
+that scene factory has not landed in SPAOS main. The builder imports WorldOS `world-jar-glass.js` and
+`home-material.js` too. If those modules are staged outside `WORLD_SCENE_ROOT`,
+set `WORLD_JAR_GLASS_SOURCE` and `WORLD_HOME_MATERIAL_SOURCE` to their paths.
+The shell bundle also reads the sibling SPAOS shell protocol
 source so its version matches the compositor. If the scene was staged without
 that sibling tree, set `SPAOS_SHELL_PROTOCOL_SOURCE` to the matching
 `desktop/shell/src/shared/protocol.ts` before building.
@@ -433,9 +441,9 @@ This is still a focused native WorldOS shell slice hosted by ValdiLinux's
 Hermes runtime, rather than a Valdi custom view or a full port of `World.html`.
 Its volume reader covers layout and app presence; SPAOS remains the authority
 for spaces, previews and app input. The native shell currently has the core
-floor, previews, Back, clock and launcher. Production jar shading, the rest of
-the WorldOS HUD, 3D launcher lattice, full chat presentation, voice, notifications, and all app
-surfaces remain separate work.
+floor, previews, Back, clock and launcher. Production jar shading is available
+as an opt-in path. The rest of the WorldOS HUD, 3D launcher lattice, full chat
+presentation, voice, notifications and app surfaces remain separate work.
 
 ### Native SPAOS Shell capability slice
 

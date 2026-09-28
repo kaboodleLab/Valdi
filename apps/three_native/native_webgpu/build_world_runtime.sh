@@ -26,6 +26,8 @@ done
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 grid_scene="$scene_root/kernel/engine/native-grid-scene.js"
 home_composition=${WORLD_HOME_COMPOSITION_SOURCE:-$scene_root/kernel/engine/world-home-composition.js}
+jar_glass=${WORLD_JAR_GLASS_SOURCE:-$scene_root/kernel/engine/world-jar-glass.js}
+home_material=${WORLD_HOME_MATERIAL_SOURCE:-$scene_root/kernel/engine/home-material.js}
 people_roster="$world_root/../../apps/people/roster.mjs"
 character_world="$world_root/kernel/engine/character-world.js"
 shell_protocol=${SPAOS_SHELL_PROTOCOL_SOURCE:-$scene_root/../shell/src/shared/protocol.ts}
@@ -33,6 +35,8 @@ esbuild_bin=${ESBUILD_BIN:-$node_modules/.bin/esbuild}
 
 [[ -f $grid_scene ]] || fail "WorldOS grid source is missing: $grid_scene"
 [[ -f $home_composition ]] || fail "WorldOS home composition is missing: $home_composition"
+[[ -f $jar_glass ]] || fail "WorldOS jar glass is missing: $jar_glass"
+[[ -f $home_material ]] || fail "WorldOS home material is missing: $home_material"
 [[ -f $people_roster ]] || fail "WorldOS People roster source is missing: $people_roster"
 [[ -f $character_world ]] || fail "WorldOS character simulation source is missing: $character_world"
 [[ -f $shell_protocol ]] || fail "SPAOS shell protocol source is missing: $shell_protocol"
@@ -61,6 +65,8 @@ NODE_PATH="$node_modules" "$esbuild_bin" "$script_dir/three_world_home.js" \
   --bundle --format=iife --platform=browser --target=es2016 \
   --alias:@worldos/native-grid-scene="$grid_scene" \
   --alias:@worldos/world-home-composition="$home_composition" \
+  --alias:@worldos/world-jar-glass="$jar_glass" \
+  --alias:@worldos/home-material="$home_material" \
   --alias:@worldos/people-roster="$people_roster" \
   --alias:@worldos/character-world="$character_world" \
   --outfile="$stage/world.js"
