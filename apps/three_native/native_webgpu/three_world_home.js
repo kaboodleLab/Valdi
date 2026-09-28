@@ -3,8 +3,9 @@ import * as tsl from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
 import { WORLD_HOME, createWorldJarRig, solveWorldHomeFrame,
-  worldCameraPosition } from '@worldos/world-home-composition';
-import { createWorldJarGlassMaterial } from '@worldos/world-jar-glass';
+  solveWorldJarPose, worldCameraPosition } from '@worldos/world-home-composition';
+import { createWorldJarGlassMaterial, createWorldJarContactShadowMaterial }
+  from '@worldos/world-jar-materials';
 import { createHomeMaterial } from '@worldos/home-material';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
@@ -210,11 +211,12 @@ async function render() {
     Math.max(2, Math.round(surfaceHeight / 2)),
     { minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter },
   ) : null;
+  const makeAuthoredHomeMaterial = (kind, parameters) => createHomeMaterial({
+    THREE, nodes: THREE, tsl, kind,
+    exposure: core.TILE.EXPOSURE, ...parameters,
+  });
   const glassMat = authoredGlass ? createWorldJarGlassMaterial({ THREE,
-    makeMaterial: (kind, parameters) => createHomeMaterial({
-      THREE, nodes: THREE, tsl, kind,
-      exposure: core.TILE.EXPOSURE, ...parameters,
-    }),
+    makeMaterial: makeAuthoredHomeMaterial,
     sceneTexture: refractTarget.texture,
     lightDir: core.KEY_DIR.clone(), glossGLSL: core.GLOSS_GLSL,
   }) : new THREE.MeshPhysicalMaterial({
@@ -224,9 +226,23 @@ async function render() {
     opacity: .5, depthWrite: false,
   });
   if (authoredGlass) glassMat.uniforms.uRes.value.set(surfaceWidth, surfaceHeight);
+  const landedJarPose = solveWorldJarPose();
+  // Browser Home raises its entire grid to WORLD_HOME.gridY. This native
+  // adapter leaves its tile mesh at local y=0, where the authored top is H.
+  const nativeGroundOffset = core.TILE.H - WORLD_HOME.gridY;
   const jarRig = createWorldJarRig(THREE, glassMat, { x: 1, z: 0 });
-  jarRig.tiltGroup.position.y = core.TILE.H + .02;
+  jarRig.tiltGroup.position.y = landedJarPose.y + nativeGroundOffset;
+  jarRig.tiltGroup.rotation.z = landedJarPose.tilt;
   homeRoot.add(jarRig.tiltGroup);
+  const jarShadowMat = createWorldJarContactShadowMaterial({
+    makeMaterial: makeAuthoredHomeMaterial, lightDir: core.KEY_DIR.clone(),
+  });
+  jarShadowMat.uniforms.uOpacity.value = landedJarPose.shadowOpacity;
+  const jarShadow = new THREE.Mesh(new THREE.CircleGeometry(.46, 40), jarShadowMat);
+  jarShadow.rotation.x = -Math.PI / 2;
+  jarShadow.scale.set(landedJarPose.shadowScale, landedJarPose.shadowScale, 1);
+  jarShadow.position.set(1, landedJarPose.shadowY + nativeGroundOffset, 0);
+  homeRoot.add(jarShadow);
   let refractDirty = true;
   let lastRefractFrame = -24;
   const refractCameraPosition = new THREE.Vector3();
@@ -803,8 +819,10 @@ async function render() {
     const jarZ = Array.isArray(jarCell) ? jarCell[1] : jarCell?.tz;
     jarRig.tiltGroup.visible = tileByName.get('jar').visible =
       Number.isInteger(jarX) && Number.isInteger(jarZ);
+    jarShadow.visible = jarRig.tiltGroup.visible;
     if (jarRig.tiltGroup.visible) {
-      jarRig.tiltGroup.position.set(jarX, core.TILE.H + .02, jarZ);
+      jarRig.tiltGroup.position.set(jarX, landedJarPose.y + nativeGroundOffset, jarZ);
+      jarShadow.position.set(jarX, landedJarPose.shadowY + nativeGroundOffset, jarZ);
       tileByName.get('jar').position.set(jarX, 0, jarZ);
     }
     const allCells = [];

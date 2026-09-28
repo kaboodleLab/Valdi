@@ -76,10 +76,13 @@ The `three_scene.js` entry is an initial Three r186 bundle for that path.
 material, rounded tile geometry, Home camera/framing law and jar rig from the
 WorldOS engine. This entry loads seven authored GLBs, using
 the WorldOS Files stack's `assets/media/town/Box.glb` for Files. It also uses
-the production jar's lathe profile and tilt/spin hierarchy. The default jar
-uses a Three physical material; prefixing the bundle with
+the production jar's lathe profile and tilt/spin hierarchy. Its landed pose
+and blue contact shadow use the shared WorldOS calculation and material. The
+native tile top is at local `TILE.H`; the adapter converts the browser pose
+from `WORLD_HOME.gridY` to that local datum before placing both meshes. The
+default glass uses a Three physical material; prefixing the bundle with
 `globalThis.__nativeWorldJarMaterial='authored';` selects WorldOS's shared
-`world-jar-glass.js` shader through its `home-material.js` graphics adapter.
+`world-jar-materials.js` glass shader through its `home-material.js` graphics adapter.
 That mode captures the background at half resolution and refreshes it on
 scene/camera changes and at least every 24 frames while people wander. It is
 currently slower on the Linux test GPU; see `PARITY.md` for measurements and
@@ -176,9 +179,10 @@ containing `kernel/engine/native-grid-scene.js` and
 `WORLD_OS_ROOT` must have
 `kernel/engine/character-world.js` and the sibling `apps/people/roster.mjs`
 source. The Linux demo uses SPAOS branch `codex/world-native-scene-contract`;
-that scene factory has not landed in SPAOS main. The builder imports WorldOS `world-jar-glass.js` and
-`home-material.js` too. If those modules are staged outside `WORLD_SCENE_ROOT`,
-set `WORLD_JAR_GLASS_SOURCE` and `WORLD_HOME_MATERIAL_SOURCE` to their paths.
+that scene factory has not landed in SPAOS main. The builder imports WorldOS
+`world-jar-materials.js` and `home-material.js` too. If those modules are staged
+outside `WORLD_SCENE_ROOT`, set `WORLD_JAR_MATERIALS_SOURCE` and
+`WORLD_HOME_MATERIAL_SOURCE` to their paths.
 The shell bundle also reads the sibling SPAOS shell protocol
 source so its version matches the compositor. If the scene was staged without
 that sibling tree, set `SPAOS_SHELL_PROTOCOL_SOURCE` to the matching

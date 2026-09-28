@@ -15,8 +15,8 @@ an empty space releases it immediately because there is no preview to await.
 | Concern | Authority and current implementation |
 | --- | --- |
 | Grid material and tile geometry | WorldOS `native-grid-scene.js`; consumed by the native bundle. |
-| Home camera, occupancy fit, and jar rig | WorldOS `world-home-composition.js`; both browser and native consume its camera basis, Home framing law, jar profile, and tilt/spin hierarchy. Native People-on-Home adds vertical actor bounds to the fit. |
-| Jar glass shader and uniforms | WorldOS `world-jar-glass.js`; browser and native import the same factory. Native scene capture and graphics adaptation are host owned. The native authored path is opt-in while its cost and full-scene color match are evaluated. |
+| Home camera, occupancy fit, and jar rig | WorldOS `world-home-composition.js`; both browser and native consume its camera basis, Home framing law, jar profile, tilt/spin hierarchy and landed jar/contact-shadow pose. Native People-on-Home adds vertical actor bounds to the fit. |
+| Jar glass and contact-shadow shaders | WorldOS `world-jar-materials.js`; browser and native import the same factories. Native scene capture and graphics adaptation are host owned. The native authored glass path is opt-in while its cost and full-scene color match are evaluated. |
 | Time of day | Native `native_world_sun.mjs` projects WorldOS's clock into the shared grid uniforms and meadow light. |
 | Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. |
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
