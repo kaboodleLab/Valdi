@@ -1,9 +1,10 @@
-// The native World presents only SPAOS's authenticated installed catalog to
-// the WorldOS mind. The same generation binds the package roster and its verbs.
+// SPAOS owns installed-app and Shell verbs. WorldOS may also present its own
+// scene-local book action; it cannot claim an app or Shell verb name.
 const NAME = /^[A-Za-z0-9_.-]{1,120}$/;
 const PACKAGE = /^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$/;
 
-export function projectNativeAgentManifest({ apps, harness, generation }) {
+export function projectNativeAgentManifest({ apps, harness, generation,
+  sceneActions = [] }) {
   if (!Number.isSafeInteger(generation) || generation < 0 ||
       !Array.isArray(apps) || !Array.isArray(harness))
     return { verbs: [], appCatalog: { generation: 0, packages: [] } };
@@ -42,5 +43,8 @@ export function projectNativeAgentManifest({ apps, harness, generation }) {
       ...(app.appId ? { appId: String(app.appId) } : {}), verbs: names });
   }
   for (const brief of harness) add(brief);
+  if (Array.isArray(sceneActions))
+    for (const brief of sceneActions)
+      if (brief?.name === 'book.open') add(brief);
   return { verbs, appCatalog: { generation, packages } };
 }

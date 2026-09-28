@@ -12,6 +12,8 @@ import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
 import { createNativeMeadowScene } from './native_meadow_scene.js';
 import { createNativeHomeBookScene } from './native_home_book_scene.js';
+import { WORLD_BOOK_OPEN_ACTION, parseWorldBookOpen }
+  from '@worldos/world-book-action';
 import { createNativePeopleScene } from './native_people_scene.js';
 import { installNativeThreeFrameBridge } from './native_three_frame_bridge.mjs';
 import { projectPeopleRoster } from './native_people_roster.mjs';
@@ -458,14 +460,17 @@ async function render() {
     stage: message => __webgpuSurfaceStage(message),
     onBack: () => globalThis.__worldBack(),
     onPeople: () => {
+      if (homeBook.focused) frameBook(false);
       if (people.isOpen()) hud.togglePeoplePanel();
       else setPeopleOpen(true);
     },
     onBook: () => {
+      const wasFocused = homeBook.focused;
       const tile = homeBook.tile ? null :
         chooseLaunchTile(null, occupiedCells, center);
       if (!homeBook.tile && !tile) return;
       homeBook.toggle(tile);
+      if (wasFocused) frameBook(false);
       seenRevision = null;
       applyLiveState();
       refractDirty = true;
@@ -494,8 +499,64 @@ async function render() {
     },
   });
   conversation.resize(surfaceWidth, surfaceHeight, extent);
+  function frameBook(focused) {
+    homeBook.setFocused(focused);
+    cameraManuallyPlaced = homeBook.focused;
+    if (homeBook.focused) {
+      const tile = homeBook.tile;
+      extent = .72;
+      const aim = new THREE.Vector3(tile.x, .30, tile.z);
+      camera.position.copy(aim).add(cameraOffset);
+      camera.lookAt(aim);
+    } else {
+      extent = homeExtent;
+      seenRevision = null;
+      seenFloorRevision = null;
+      applyLiveState();
+      camera.position.copy(center).add(cameraOffset);
+      camera.lookAt(center);
+    }
+    camera.left = -extent * surfaceWidth / surfaceHeight;
+    camera.right = extent * surfaceWidth / surfaceHeight;
+    camera.top = extent;
+    camera.bottom = -extent;
+    camera.updateProjectionMatrix();
+    hud.resize(surfaceWidth, surfaceHeight, extent);
+    conversation.resize(surfaceWidth, surfaceHeight, extent);
+    uniforms.uCamPos.value.copy(camera.position);
+    people.faceCamera();
+    refractDirty = true;
+  }
+  function openBookRequest(args) {
+    const request = parseWorldBookOpen(args);
+    const tile = homeBook.tile || chooseLaunchTile(request.tile, occupiedCells, center);
+    if (!tile) throw new Error('There is no free Home tile for the book');
+    if (people.isOpen()) setPeopleOpen(false);
+    homeBook.open({ ...request, tile });
+    frameBook(true);
+    seenRevision = null;
+    applyLiveState();
+    __webgpuSurfaceStage(`WorldOS book.open wrote ${request.subject} at (${tile.x},${tile.z})`);
+    return { ok: true, verb: WORLD_BOOK_OPEN_ACTION.name,
+      outcome: { subject: request.subject, tile: [tile.x, tile.z],
+        pages: homeBook.pageCount },
+      narration: `The book is open to ${request.subject} with ${homeBook.pageCount} printed pages.`,
+      t: Date.now() };
+  }
+  globalThis.__worldOpenBook = openBookRequest;
   const agentVerbs = new Set();
   const agentServices = new Set();
+  const sceneActions = new Set();
+  let catalogForAgent = null;
+  function publishAgentCatalog() {
+    if (!catalogForAgent) return;
+    sceneActions.clear();
+    if (!agentVerbs.has(WORLD_BOOK_OPEN_ACTION.name) &&
+        !agentServices.has(WORLD_BOOK_OPEN_ACTION.name))
+      sceneActions.add(WORLD_BOOK_OPEN_ACTION.name);
+    sendAgent({ ...catalogForAgent,
+      sceneActions: sceneActions.size ? [WORLD_BOOK_OPEN_ACTION] : [] });
+  }
   const pendingAgentCalls = new Set();
   let seenAgentStatus = '';
   function pollAgentChannel() {
@@ -532,6 +593,18 @@ async function render() {
         if (!call || typeof call.callId !== 'string' || typeof call.verb !== 'string') continue;
         const result = error => sendAgent({ type: 'result', callId: call.callId,
           result: { ok: false, verb: call.verb, error: { code: 'not-found', message: error } } });
+        if (sceneActions.has(call.verb)) {
+          try {
+            sendAgent({ type: 'result', callId: call.callId,
+              result: openBookRequest(call.args) });
+          } catch (error) {
+            sendAgent({ type: 'result', callId: call.callId, result: {
+              ok: false, verb: call.verb, error: { code: 'invalid-args',
+                message: String(error?.message || error) }, t: Date.now(),
+            } });
+          }
+          continue;
+        }
         if (!agentVerbs.has(call.verb) && !agentServices.has(call.verb)) {
           result('This verb is not in the native World catalog');
           continue;
@@ -588,8 +661,9 @@ async function render() {
         }
         for (const verb of message.harness || [])
           if (typeof verb?.name === 'string') agentVerbs.add(verb.name);
-        sendAgent({ type: 'catalog', apps: message.apps,
-          harness: message.harness || [], generation: message.catalogGeneration });
+        catalogForAgent = { type: 'catalog', apps: message.apps,
+          harness: message.harness || [], generation: message.catalogGeneration };
+        publishAgentCatalog();
         nativeApps.clear();
         for (const app of message.apps) {
           if (typeof app?.key === 'string' && !app.hidden) nativeApps.set(app.key, app);
@@ -607,6 +681,7 @@ async function render() {
         for (const service of message.services)
           for (const verb of service?.verbs || [])
             if (typeof verb?.name === 'string') agentServices.add(verb.name);
+        publishAgentCatalog();
       } else if (message.type === 'call_result' &&
                  pendingAgentCalls.delete(message.callId)) {
         sendAgent({ type: 'result', callId: message.callId, result: message.result });
@@ -1000,6 +1075,7 @@ async function render() {
     if (hud.isOpen()) { hud.close(); return; }
     if (hud.hasPeoplePanel()) { hud.closePeoplePanel(); return; }
     if (people.isOpen()) { setPeopleOpen(false); return; }
+    if (homeBook.focused) { frameBook(false); return; }
     if (typeof __nativeWorldLeave === 'function' && __nativeWorldLeave()) {
       const leavingSpace = activeSpace ?? requestedSpace;
       if (leavingSpace !== null) returningSpace = {
@@ -1049,6 +1125,7 @@ async function render() {
       return;
     }
     if (kind === 'recenter') {
+      if (homeBook.focused) { frameBook(false); return; }
       cameraManuallyPlaced = false;
       seenRevision = null;
       seenFloorRevision = null;
@@ -1108,11 +1185,13 @@ async function render() {
     raycaster.setFromCamera(pointerNdc, camera);
     if (clicked && homeBook.tile &&
         raycaster.intersectObject(homeBook.group, true).length) {
-      homeBook.toggle(null);
-      seenRevision = null;
-      applyLiveState();
-      refractDirty = true;
-      __webgpuSurfaceStage('WorldOS Home book dismissed');
+      if (homeBook.focused) {
+        if (homeBook.nextPage())
+          __webgpuSurfaceStage(`WorldOS Home book page ${homeBook.page}/${homeBook.pageCount}`);
+      } else {
+        frameBook(true);
+        __webgpuSurfaceStage('WorldOS Home book opened for reading');
+      }
       return;
     }
     if (clicked && globalThis.__nativeWorldPeopleOnHome === true) {

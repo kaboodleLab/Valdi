@@ -32,3 +32,14 @@ test('native mind projection refuses stale catalogs and conservatively classifie
   assert.equal(projected.verbs[1].userGo, true);
   assert.equal(projected.verbs[0].cls, 'act');
 });
+
+test('only the owned scene action may join the native mind catalog', () => {
+  const book = { name: 'book.open', cls: 'act', args: { subject: { type: 'string' } } };
+  const projected = projectNativeAgentManifest({ generation: 3, apps: [], harness: [],
+    sceneActions: [book, { name: 'mail.send', cls: 'commit' }] });
+  assert.deepEqual(projected.verbs.map(verb => verb.name), ['book.open']);
+  assert.equal(projected.verbs[0].packageName, undefined);
+  const owned = projectNativeAgentManifest({ generation: 3, apps: [],
+    harness: [book], sceneActions: [book] });
+  assert.equal(owned.verbs.length, 1, 'an authenticated Shell owner takes precedence');
+});

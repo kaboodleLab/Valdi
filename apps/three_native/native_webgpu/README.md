@@ -316,6 +316,13 @@ and Home recenters on the live floor. Space and app requests use the inherited
 private World socket; camera and launcher navigation stay in the renderer. A
 standalone window without that socket remains a visual probe.
 
+The Book control places a closed book on a free Home tile. Clicking it opens a
+focused reading view; clicking the open page advances it, while Back closes the
+cover. The WorldOS-owned `book.open` scene action accepts a subject, short
+article and optional tile. Native World advertises that action to its mind only
+when SPAOS has no app or Shell verb with the same name. A live mind can write
+the article in the action arguments; the action prints it on the book pages.
+
 The asset preparation step decodes the available WorldOS app-icon GLBs, while
 the runtime loads an icon only when a live space or saved app prop needs it.
 An app with no matching artwork gets a text label from the same WorldOS font
@@ -333,7 +340,9 @@ GLB (about 53 MiB) can load when needed.
   preview files own the window pixels. The volume is a read-only source of
   WorldOS prop placement. The native scene never writes either authority.
 - WorldOS's shared `native-grid-scene.js` owns the grid material and tile
-  geometry; `world-home-composition.js` owns the camera fit and jar rig. New
+  geometry; `world-home-composition.js` owns the camera fit and jar rig;
+  `world-book-rig.js` and `world-book-action.js` own Home book construction,
+  pose and action content. New
   prop and lighting work should move through similarly
   explicit WorldOS scene factories, then be consumed here. Keeping another
   hand-copied scene inside Valdi would make visual parity drift.
