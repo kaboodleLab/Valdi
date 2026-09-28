@@ -19,7 +19,7 @@ an empty space releases it immediately because there is no preview to await.
 | Jar glass and contact-shadow shaders | WorldOS `world-jar-materials.js`; browser and native import the same factories. Native scene capture and graphics adaptation are host owned. The native authored glass path is opt-in while its cost and full-scene color match are evaluated. |
 | Time of day | WorldOS `world-daylight.js` owns the room key palette, position and intensity for both renderers. Native `native_world_sun.mjs` projects the clock into the grid's sun-grade uniforms. The native jar uses the authored warm floor pool and local point light at night. |
 | Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. The native frame pump advances Three's animation callbacks so the GPU skeleton palette follows the simulation. |
-| Encyclopedia body and Home pose | WorldOS `world-book-rig.js` constructs the browser and native cover, spine, page stack and hinge, and advances the transient presence/pose law in both hosts. Native Home now draws a closed book on a free tile from a local Book control. The browser still owns article print, page motion and full interaction. |
+| Encyclopedia body and Home pose | WorldOS `world-book-rig.js` now owns the Home book group, tilt, rig, shadow, and pose application in both hosts. Each renderer supplies its own materials. Native Home draws a closed book on a free tile from a local Book control. The browser still owns article print, page motion and full interaction. |
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
 | App launch, enter, leave, reveal and release | Native World sends requests over its inherited privileged SPAOS channel. |
 | Space dock and app controls | Native Space UI sends bounded requests through its Shell controller; SPAOS checks the latest snapshot. |
@@ -32,8 +32,8 @@ an empty space releases it immediately because there is no preview to await.
   Native Home can now show the shared closed book body and pose from explicit
   transient state, with a native Book control; it does not yet open articles,
   turn pages, or receive the browser's `book.open` action. `native_people_scene.js`
-  also contains a small book/well display for its People view. Neither is yet
-  a reusable WorldOS home scene owner. The production owners are in `02-stage-and-camera.js`,
+  also contains a small book/well display for its People view. The book now
+  has a WorldOS-owned scene factory, but Home as a whole does not. The production owners are in `02-stage-and-camera.js`,
   `08-jar.js`, `20-holes-and-labels.js`, and `characters.js`.
   The browser book's active flag and tile live in `20-holes-and-labels.js` and
   are not `world.json` book props on this WorldOS revision. A native renderer
@@ -76,13 +76,11 @@ an empty space releases it immediately because there is no preview to await.
 
 ## Next extraction boundary
 
-Extend the shared camera/rig/pose leaf into a WorldOS-owned Home scene factory,
-following `native-grid-scene.js`. It should accept authored
-state, including transient book/well presence, and return scene nodes, update
-hooks, picking targets, and a disposal function. The browser World should
-consume the same factory first; then the
-native bundle can import it through `build_world_runtime.sh`. Keep SPAOS's
-space and window protocol separate from scene creation. This avoids growing a
+Carry the Home book pattern to the next visible scene object, then add a shared
+World action boundary for transient Home events such as `book.open`. The shared
+scene leaf should own hierarchy, pose, pick targets, and disposal; the browser
+and native hosts should supply materials and route input. Keep SPAOS's space
+and window protocol separate from scene creation. This avoids growing a
 second hand-copied World inside Valdi.
 
 For acceptance, capture tty1 and tty2 at the same WorldOS state, ground
