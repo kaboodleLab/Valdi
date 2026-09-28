@@ -82,11 +82,14 @@ function shareSkeletonPalettes(root) {
 }
 
 export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
-  makeText, loadModel, stage, onFocus }) {
+  makeText, loadModel, stage, onFocus, groundHeight = () => 0 }) {
   const root = new THREE.Group();
   root.name = 'WorldOS People';
   root.visible = false;
   scene.add(root);
+  const room = new THREE.Group();
+  room.visible = false;
+  root.add(room);
   const actors = new Map();
   const models = new Map();
   const loading = new Map();
@@ -95,7 +98,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     new THREE.MeshBasicMaterial({ color: 0xf0efed, toneMapped: false }));
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = -.09;
-  root.add(floor);
+  room.add(floor);
 
   const white = new THREE.MeshPhysicalMaterial({ color: 0xfafaf8, roughness: .22,
     metalness: 0, clearcoat: .75, clearcoatRoughness: .18 });
@@ -103,7 +106,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
   function portal(x, z, title, memory = false) {
     const group = new THREE.Group();
     group.position.set(x, 0, z);
-    root.add(group);
+    room.add(group);
     const tile = new THREE.Mesh(tileGeometry, white);
     tile.scale.set(1.13, 1, 1.13);
     group.add(tile);
@@ -118,23 +121,29 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
       group.add(rim);
     }
     const tag = makeLabel(title, x, .07, z + .72, true);
-    root.add(tag);
+    room.add(tag);
     portalLabels.push(tag);
     return group;
   }
-  function makeLabel(value, x, y, z, dark = false) {
-    const { texture, width, height } = makeText(value, dark ? [71, 73, 75] : [77, 79, 80]);
+  function makeLabel(value, x, y, z, dark = false, person = false) {
+    const ink = person ? [224, 228, 230] : dark ? [71, 73, 75] : [77, 79, 80];
+    const { texture, width, height } = makeText(value, ink);
     const label = new THREE.Group();
     const size = .15;
     const w = Math.min(.95, size * width / height);
     const plate = new THREE.Mesh(new THREE.CircleGeometry(.5, 32),
-      new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true,
-        opacity: dark ? .82 : .66, depthWrite: false, toneMapped: false }));
+      new THREE.MeshBasicMaterial({ color: person ? 0x181b20 : 0xffffff,
+        transparent: true, opacity: person ? .78 : dark ? .82 : .66,
+        depthTest: !person, depthWrite: false, toneMapped: false }));
     plate.scale.set(w + .18, size + .075, 1);
     const letters = new THREE.Mesh(new THREE.PlaneGeometry(w, size),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true,
-        depthWrite: false, toneMapped: false }));
+        depthTest: !person, depthWrite: false, toneMapped: false }));
     letters.position.z = .002;
+    if (person) {
+      plate.renderOrder = 20;
+      letters.renderOrder = 21;
+    }
     label.add(plate, letters);
     label.position.set(x, y, z);
     label.userData.texture = texture;
@@ -180,6 +189,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     return pending;
   }
   let open = false;
+  let homeVisible = false;
   let source = 'sample';
   let currentRows = SAMPLE_PEOPLE;
   let selectedId = null;
@@ -201,8 +211,8 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     if (!actor || actor.name === name) return;
     disposeLabel(actor.label);
     actor.label = makeLabel(name, actor.group.position.x, .045,
-      actor.group.position.z + .31);
-    actor.label.children[0].material.opacity = id === selectedId ? .94 : .66;
+      actor.group.position.z + .31, false, true);
+    actor.label.children[0].material.opacity = id === selectedId ? .94 : .78;
     actor.label.visible = actor.group.visible;
     root.add(actor.label);
     actor.name = name;
@@ -240,20 +250,22 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
       shadow.position.y = -.075;
       group.add(shadow);
       const name = desired.get(id)?.name || id;
-      const actor = { group, label: makeLabel(name, 0, .045, 0), name };
+      const actor = { group, label: makeLabel(name, 0, .045, 0, false, true), name };
       group.visible = actor.label.visible = false;
       root.add(group, actor.label);
       actors.set(id, actor);
-      actor.label.children[0].material.opacity = id === selectedId ? .94 : .66;
+      actor.label.children[0].material.opacity = id === selectedId ? .94 : .78;
       stage(`WorldOS People model loaded: ${name} (${asset})`);
       if (globalThis.__nativePeopleDiagnostics)
         stage(`WorldOS People skeleton palettes shared: ${name} ${palettesShared}`);
       let action = idle;
       return {
         update(state, dt) {
-          group.position.set(state.x, 0, state.z);
+          const y = open ? 0 : groundHeight(state.x, state.z);
+          group.position.set(state.x, y, state.z);
+          group.scale.setScalar(open ? 1 : .85);
           group.rotation.y = state.heading;
-          actor.label.position.set(state.x, .045, state.z + .31);
+          actor.label.position.set(state.x, y + (open ? .045 : .13), state.z + .42);
           group.visible = actor.label.visible = state.alpha > .03;
           const next = state.speed > .02 ? walk : idle;
           if (next !== action) {
@@ -282,8 +294,8 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     createVisual,
     getObstacles: () => [{ x: -.15, z: -.18, half: .65 },
       { x: .25, z: 1.35, half: .65 }],
-    getVisibility: () => open ? 1 : 0,
-    canMove: () => open,
+    getVisibility: () => open || homeVisible ? 1 : 0,
+    canMove: () => open || homeVisible,
     withinView: point => Math.abs(point.x) < 4.8 && Math.abs(point.z) < 3.3,
   });
   function setPeople(rows, { sample = false } = {}) {
@@ -296,7 +308,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
       desired.set(row.id, row);
     }
     if (selectedId && !desired.has(selectedId)) select(null);
-    if (!open) return;
+    if (!open && !homeVisible) return;
     for (const [id, row] of desired) {
       const leaving = departures.get(id);
       if (leaving) {
@@ -325,7 +337,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
   function select(id) {
     selectedId = id && desired.has(id) ? id : null;
     for (const [key, actor] of actors)
-      actor.label.children[0].material.opacity = key === selectedId ? .94 : .66;
+      actor.label.children[0].material.opacity = key === selectedId ? .94 : .78;
     return selectedId;
   }
   function focus(id) {
@@ -347,20 +359,50 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     }
     return nearest?.id ?? null;
   }
+  function pickScreen(x, y, width, height) {
+    camera.updateMatrixWorld();
+    let nearest = null;
+    for (const [id, actor] of actors) {
+      if (!actor.group.visible) continue;
+      const foot = actor.group.localToWorld(new THREE.Vector3()).project(camera);
+      const head = actor.group.localToWorld(new THREE.Vector3(0, 1.15, 0)).project(camera);
+      const fx = (foot.x + 1) * width / 2, fy = (1 - foot.y) * height / 2;
+      const hx = (head.x + 1) * width / 2, hy = (1 - head.y) * height / 2;
+      const dx = hx - fx, dy = hy - fy;
+      const t = THREE.MathUtils.clamp(((x - fx) * dx + (y - fy) * dy) /
+        Math.max(1, dx * dx + dy * dy), 0, 1);
+      const distance = Math.hypot(x - fx - t * dx, y - fy - t * dy);
+      if (distance < 25 && (!nearest || distance < nearest.distance))
+        nearest = { id, distance };
+    }
+    return nearest?.id ?? null;
+  }
   function enter() {
     if (open) return;
     open = root.visible = true;
+    room.visible = true;
     setPeople(currentRows, { sample: source === 'sample' });
     stage(`WorldOS People ${source} opened`);
   }
-  function leave() { open = root.visible = false; }
+  function leave() {
+    open = room.visible = false;
+    root.visible = homeVisible;
+  }
+  function showOnHome(visible) {
+    homeVisible = !!visible;
+    root.visible = open || homeVisible;
+    if (homeVisible) {
+      setPeople(currentRows, { sample: source === 'sample' });
+      stage(`WorldOS People ${source} visible on home`);
+    }
+  }
   function faceCamera() {
     for (const actor of actors.values()) actor.label.lookAt(camera.position);
     for (const tag of portalLabels) tag.lookAt(camera.position);
   }
   let ticks = 0;
   function tick(dt) {
-    if (!open) return;
+    if (!open && !homeVisible) return;
     world.tick(performance.now(), dt);
     if (globalThis.__nativePeopleDiagnostics && ++ticks % 120 === 0) {
       const states = world.snapshot();
@@ -368,8 +410,8 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
         `${states.filter(row => row.phase === 'online').length} online`);
     }
   }
-  return { root, enter, leave, isOpen: () => open, setPeople, useSample,
-    rows: () => [...desired.values()], source: () => source, select, focus, pick,
+  return { root, enter, leave, showOnHome, isOpen: () => open, setPeople, useSample,
+    rows: () => [...desired.values()], source: () => source, select, focus, pick, pickScreen,
     setPaused: value => world.setPaused(value), isPaused: () => world.isPaused(),
     faceCamera, tick };
 }

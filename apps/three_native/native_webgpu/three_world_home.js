@@ -105,7 +105,7 @@ async function render() {
 
   const liveShell = typeof __nativeReadShellState === 'function' ||
     typeof __nativeReadShellFloor === 'function' || typeof __nativeWorldPoll === 'function';
-  let extent = liveShell ? 3.8 : 5.8;
+  let extent = liveShell ? (globalThis.__nativeWorldPeopleOnHome === true ? 4.6 : 3.8) : 5.8;
   const camera = new THREE.OrthographicCamera(-extent, extent, extent, -extent, .1, 100);
   const center = new THREE.Vector3(-1.5, 0, -2.2);
   const cameraOffset = new THREE.Vector3(5.3, 7.2, 8.1);
@@ -322,6 +322,7 @@ async function render() {
     tile.visible = visible;
   }
   const people = createNativePeopleScene({ THREE, scene, camera, tileGeometry, makeText,
+    groundHeight: (x, z) => meadow?.heightAt(x, z) ?? 0,
     loadModel: name => new Promise((resolve, reject) => {
       const loader = nativeIconLoader(name, manifest);
       loader.parse(__nativeReadAsset(`${name}.glb`), '',
@@ -474,7 +475,9 @@ async function render() {
       }
     }
   }
-  if (globalThis.__nativeWorldStartView === 'people') pollPeopleRoster();
+  if (globalThis.__nativeWorldStartView === 'people' ||
+      globalThis.__nativeWorldPeopleOnHome === true) pollPeopleRoster();
+  if (globalThis.__nativeWorldPeopleOnHome === true) people.showOnHome(true);
   if (globalThis.__nativeWorldStartView === 'people') setPeopleOpen(true);
   function isCell(value) {
     return Array.isArray(value) && value.length === 2 &&
@@ -808,6 +811,7 @@ async function render() {
         camera.position.copy(center).add(cameraOffset);
         camera.lookAt(center);
         uniforms.uCamPos.value.copy(camera.position);
+        people.faceCamera();
       }
     }
     for (const card of cardBySpace.values()) card.mesh.lookAt(camera.position);
@@ -955,6 +959,7 @@ async function render() {
       uniforms.uCamPos.value.copy(camera.position);
       for (const card of cardBySpace.values()) card.mesh.lookAt(camera.position);
       for (const label of labelByFloorObject.values()) label.mesh.lookAt(camera.position);
+      people.faceCamera();
     }
     cameraManuallyPlaced = true;
   };
@@ -979,6 +984,17 @@ async function render() {
     }
     pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
     raycaster.setFromCamera(pointerNdc, camera);
+    if (clicked && globalThis.__nativeWorldPeopleOnHome === true) {
+      const person = people.pick(raycaster) ||
+        people.pickScreen(x, y, surfaceWidth, surfaceHeight);
+      if (person) {
+        setPeopleOpen(true);
+        people.select(person);
+        hud.selectPerson(person);
+        hud.togglePeoplePanel();
+        return;
+      }
+    }
     // The meadow can stand well above the flat grid plane. Pick the visible
     // authored tile before falling back to that plane, including Space tiles
     // published after the renderer's first frame.

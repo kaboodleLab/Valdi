@@ -106,6 +106,7 @@ export function createNativeMeadowScene(THREE) {
   rebuild();
   return {
     root,
+    heightAt: field,
     setOccupiedCells(cells) {
       if (cells.size === occupied.size && [...cells].every(key => occupied.has(key))) return false;
       occupied.clear();

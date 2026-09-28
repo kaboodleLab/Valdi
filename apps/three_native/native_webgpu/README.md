@@ -101,10 +101,19 @@ World samples the local clock and feeds WorldOS's elevation palette, floor
 luminance, gradient direction and footprint into the shared grid material;
 the meadow's ambient and key lights follow its day/night value. This does not
 yet include the production sun and moon bodies or their full lighting rig.
-The grid remains the default for an unprefixed bundle. The meadow-enabled v12
-runtime is running on Linux tty2 at 2880×1800: steady frame interval p50
-16.6 ms and p95 17.3–17.6 ms across several 120-frame windows. The isolated
+The grid remains the default for an unprefixed bundle. A meadow-only tty2 run
+at 2880×1800 measured steady frame interval p50 16.6 ms and p95 17.3–17.6 ms
+across several 120-frame windows. The isolated
 SPAOS mind-call test and a live typed Hermes reply passed with that scene.
+An additional `globalThis.__nativeWorldPeopleOnHome = true` prefix draws the
+WorldOS character simulation over that home floor, with feet following the
+meadow height, readable name labels, and a click through to the People panel.
+This uses the authored sample team until an authenticated live roster arrives.
+The combined scene on tty2 measured interval p50 about 22 ms and p95 about
+25 ms with 11 animated people and full grass detail; avatar rendering is the
+next performance target. The standalone GPU probe's fixed frame deadline can
+expire while loading all 11 models, so compare its frame logs and capture
+separately from its exit code for this scene.
 When `SPAOS_WORLD_OS_ROOT` points to the WorldOS tree of the running SPAOS
 agent service and `SPAOS_AGENT_SERVICE=1`, `run_spaos_world.sh` starts a
 companion process with the native host. It authenticates through SPAOS's
