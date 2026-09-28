@@ -161,6 +161,8 @@ def main() -> None:
                 if args.test_host_refresh:
                     host_pattern = r"published \d+ authenticated SPAOS apps, (\d+) host apps"
                     world_pattern = r"WorldOS app catalog received: (\d+) visible apps"
+                    matches = lambda pattern: re.findall(pattern,
+                        log_path.read_text(errors="replace"))
                     initial_host = wait_for_log(process, log_path, host_pattern, lambda values: True)
                     initial_world = wait_for_log(process, log_path, world_pattern, lambda values: True)
                     app_dir = runtime / "data" / "applications"
@@ -172,13 +174,32 @@ def main() -> None:
                                  lambda values: (initial_host + 1) in values)
                     wait_for_log(process, log_path, world_pattern,
                                  lambda values: (initial_world + 1) in values)
+                    settings_files = list((runtime / "config").rglob("settings.json"))
+                    if len(settings_files) != 1:
+                        raise RuntimeError(f"Expected one compositor settings file: {settings_files}")
+                    settings_file = settings_files[0]
+                    def set_hidden(ids: list[str]) -> None:
+                        temporary = settings_file.with_suffix(".json.tmp")
+                        temporary.write_text(json.dumps({"launcher": {"hiddenApps": ids}}))
+                        temporary.replace(settings_file)
+                    world_seen = len(matches(world_pattern))
+                    set_hidden(["valdi-refresh-fixture.desktop"])
+                    wait_for_log(process, log_path, world_pattern,
+                                 lambda values: len(values) > world_seen and values[-1] == initial_world)
+                    world_seen = len(matches(world_pattern))
+                    set_hidden([])
+                    wait_for_log(process, log_path, world_pattern,
+                                 lambda values: len(values) > world_seen and
+                                 values[-1] == initial_world + 1)
+                    world_seen = len(matches(world_pattern))
                     fixture.unlink()
                     wait_for_log(process, log_path, host_pattern,
                                  lambda values: len(values) >= 3 and values[-1] == initial_host)
                     wait_for_log(process, log_path, world_pattern,
-                                 lambda values: len(values) >= 3 and values[-1] == initial_world)
+                                 lambda values: len(values) > world_seen and values[-1] == initial_world)
                     print(f"SPAOS native catalog refresh passed: {initial_host} -> "
-                          f"{initial_host + 1} -> {initial_host} host apps; World updated")
+                          f"{initial_host + 1} -> {initial_host} host apps; "
+                          "World updated for install, hide, unhide and removal")
                     return
                 identity = secrets.token_hex(16)
                 submitted = request(endpoint, token, {"op": "submit", "session": before["session"],

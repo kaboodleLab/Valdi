@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { CompositorClient } from '@spaos/compositor-client';
 import { PROTOCOL_VERSION } from '@spaos/shell-protocol';
+import { SettingsStore } from '@spaos/settings';
 import { probeSpaosCatalog, scanHostApps } from './probe_spaos_catalog.mjs';
 import { requestFromNativeUi } from './native_shell_ui_requests.mjs';
 
@@ -22,7 +23,7 @@ function shellFd() {
   if (!/^\d{1,6}$/.test(raw) || Number(raw) < 3) throw new Error('Invalid SPAOS Shell descriptor');
   return Number(raw);
 }
-function catalogRows(snapshot, hostApps) {
+function catalogRows(snapshot, hostApps, hidden) {
   return [...snapshot.apps, ...hostApps].map(entry => ({
     key: entry.world ? entry.id.slice('world:'.length) : entry.id,
     name: entry.name,
@@ -31,6 +32,7 @@ function catalogRows(snapshot, hostApps) {
     ...(entry.worldIconDeclared ? { worldIconDeclared: true } : {}),
     ...(entry.worldIcon ? { worldIcon: entry.worldIcon } : {}),
     ...(entry.wmClass ? { appId: entry.wmClass } : {}),
+    ...(hidden.has(entry.id) ? { hidden: true } : {}),
   }));
 }
 
@@ -56,6 +58,7 @@ async function run() {
   let closed = false;
   let catalogPromise = null;
   let catalog = null;
+  const settings = new SettingsStore();
   let hostApps = [];
   let publishedGeneration = 0;
   let publishedRows = '';
@@ -89,7 +92,9 @@ async function run() {
       snapshot = updated;
       hostApps = host.host;
     }
-    const rows = catalogRows(snapshot, hostApps);
+    if (client.settingsPath) await settings.open(client.settingsPath);
+    const rows = catalogRows(snapshot, hostApps,
+      new Set(settings.current.launcher.hiddenApps));
     const rowFingerprint = JSON.stringify(rows);
     if (snapshot.generation === publishedGeneration && rowFingerprint === publishedRows) return;
     client.send({ type: 'publish_apps', catalogGeneration: snapshot.generation,
