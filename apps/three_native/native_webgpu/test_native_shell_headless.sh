@@ -7,6 +7,10 @@ set -euo pipefail
 : "${NATIVE_RUNTIME:?Set NATIVE_RUNTIME to build_world_runtime.sh output}"
 : "${WORLD_STATE:?Set WORLD_STATE to the WorldOS state file}"
 : "${TEST_LOG_DIR:?Set TEST_LOG_DIR to a retained test log directory}"
+if [[ -n ${TEST_HOLD_SECONDS:-} && ! ${TEST_HOLD_SECONDS} =~ ^[0-9]{1,2}$ ]]; then
+  echo "TEST_HOLD_SECONDS must be 0–99 whole seconds" >&2
+  exit 2
+fi
 
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 shell_command=${SHELL_COMMAND:-$script_dir/run_spaos_shell.sh}
@@ -139,3 +143,6 @@ assert pixel(width // 2, height // 2) == (0, 0, 0)
 assert pixel(width * 3 // 4, height - 43) != (0, 0, 0)
 print(f'native shell GPU frame: {width}x{height}, transparent field and visible dock')
 PY
+if [[ -n ${TEST_HOLD_SECONDS:-} ]]; then
+  sleep "$TEST_HOLD_SECONDS"
+fi

@@ -15,6 +15,7 @@ an empty space releases it immediately because there is no preview to await.
 | Concern | Authority and current implementation |
 | --- | --- |
 | Grid material and tile geometry | WorldOS `native-grid-scene.js`; consumed by the native bundle. |
+| Home camera, occupancy fit, and jar rig | WorldOS `world-home-composition.js`; both browser and native consume its camera basis, Home framing law, jar profile, and tilt/spin hierarchy. Native People-on-Home adds vertical actor bounds to the fit. |
 | Time of day | Native `native_world_sun.mjs` projects WorldOS's clock into the shared grid uniforms and meadow light. |
 | Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. |
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
@@ -24,7 +25,8 @@ an empty space releases it immediately because there is no preview to await.
 ## Gaps against the production World on tty1
 
 - Home composition differs visibly. The native meadow and jar demonstration
-  does not reproduce the production room's book, well, lighting, camera,
+  now shares the production camera basis and Home framing law, but does not
+  reproduce the production room's book, well, lighting, glass shader,
   status controls, and bottom orb. `native_people_scene.js` contains a small
   book/well approximation for its People view; that is not a reusable WorldOS
   home scene owner. The production owners are in `02-stage-and-camera.js`,
@@ -37,15 +39,19 @@ an empty space releases it immediately because there is no preview to await.
   machine currently reports zero members, so the authored sample population
   appears. Presence must remain sourced from the authenticated roster when it
   has members, with no fabricated live status.
-- With the 11 sample avatars visible on the Linux test GPU, 120-frame native
-  intervals were around 22 ms p50 and 25 ms p95. Meadow-only intervals were
-  around 16.6 ms p50 and 17.3 ms p95. Avatar and scene cost needs profiling
-  before claiming a 60 fps shell.
+- In the isolated 1600×900 Linux compositor with meadow and 11 sample avatars,
+  the corrected shared frame kept every avatar visible. Settled 120-frame
+  intervals ranged from 28.06–34.15 ms p50 and 34.32–40.14 ms p95 across two
+  runs (render time 22.45–27.63 ms p50). Boot-time model loading produces much
+  longer outliers. Earlier
+  lower-resolution runs measured about 22/25 ms p50/p95 with avatars and
+  16.6/17.3 ms with meadow alone. This scene is below a 60 fps target on the
+  test GPU and needs profiling before being considered a production default.
 
 ## Next extraction boundary
 
-Extract the production home composition and camera as a WorldOS-owned Three
-scene factory, following `native-grid-scene.js`. It should accept authored
+Extend the shared camera/rig leaf into a WorldOS-owned Home scene factory,
+following `native-grid-scene.js`. It should accept authored
 state and return scene nodes, update hooks, picking targets, and a disposal
 function. The browser World should consume the same factory first; then the
 native bundle can import it through `build_world_runtime.sh`. Keep SPAOS's

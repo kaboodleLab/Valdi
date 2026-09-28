@@ -71,11 +71,14 @@ The `three_scene.js` entry is an initial Three r186 bundle for that path.
 
 ### WorldOS home scene
 
-`three_world_home.js` imports WorldOS's `native-grid-scene.js` factory at bundle
-time. That factory supplies the painted-grid node material and rounded tile
-geometry from the WorldOS engine. This entry loads seven authored GLBs, using
+`three_world_home.js` imports WorldOS's `native-grid-scene.js` and
+`world-home-composition.js` at bundle time. These supply the painted-grid node
+material, rounded tile geometry, Home camera/framing law and jar rig from the
+WorldOS engine. This entry loads seven authored GLBs, using
 the WorldOS Files stack's `assets/media/town/Box.glb` for Files. It also uses
-the production jar's lathe profile with a Three physical glass stand-in.
+the production jar's lathe profile and tilt/spin hierarchy with a Three
+physical glass stand-in. When people stand on Home, their vertical bounds
+extend the shared camera fit so standing bodies stay inside the viewport.
 The home floor and People preview are separate scene groups. The bottom-left
 People control opens the eleven members of WorldOS's own `apps/people/roster.mjs`
 sample, using authored character GLBs and the worker's retargeted `StandingIdle`
@@ -161,7 +164,10 @@ prepare a runtime directory outside the checkout. The script refuses to
 overwrite an existing directory and publishes `assets/`, `world.js`, and
 `shell.js` only after all have built successfully. Set `ESBUILD_BIN` if esbuild is not in the
 Node directory's `.bin/` folder. `WORLD_SCENE_ROOT` must be a SPAOS checkout
-containing `kernel/engine/native-grid-scene.js`. `WORLD_OS_ROOT` must have
+containing `kernel/engine/native-grid-scene.js` and
+`kernel/engine/world-home-composition.js`. For a staged scene source, set
+`WORLD_HOME_COMPOSITION_SOURCE` to the absolute path of the shared leaf.
+`WORLD_OS_ROOT` must have
 `kernel/engine/character-world.js` and the sibling `apps/people/roster.mjs`
 source. The Linux demo uses SPAOS
 `codex/world-native-scene-contract` at `52f5fa66`. That scene factory is not
@@ -302,7 +308,8 @@ GLB (about 53 MiB) can load when needed.
   preview files own the window pixels. The volume is a read-only source of
   WorldOS prop placement. The native scene never writes either authority.
 - WorldOS's shared `native-grid-scene.js` owns the grid material and tile
-  geometry. New jar, prop and lighting work should move through similarly
+  geometry; `world-home-composition.js` owns the camera fit and jar rig. New
+  prop and lighting work should move through similarly
   explicit WorldOS scene factories, then be consumed here. Keeping another
   hand-copied scene inside Valdi would make visual parity drift.
 - Valdi's Linux host owns Wayland input, Hermes, Dawn and the surface lifetime.
@@ -380,7 +387,7 @@ An isolated headless SPAOS session validated a freshly built bundle through
 tile entry, Back, an updated preview, and release of the departing window.
 New bundles are checked in isolated sessions before tty2 is updated.
 
-The current live tty2 uses the native World scene and native SPAOS Space UI
+The previous live tty2 session used the native World scene and native SPAOS Space UI
 under the SPAOS compositor. Its home contains the authored jar and meadow,
 eleven WorldOS People avatars driven by the shared character simulation, a
 People card, launcher, WorldOS chat, and a dock. A real Calculator launch from
@@ -391,6 +398,13 @@ and released the linger 76 ms after the space switch. Neither transition
 reached SPAOS's hold deadline. With the avatars visible, 120-frame steady-state
 intervals measured about 22 ms at p50 and 25 ms at p95 on the test GPU. This is
 functional parity work, not yet the full production WorldOS room or animation.
+
+On 2026-09-28, a separate headless 1600×900 SPAOS session validated the
+shared Home camera/rig bundle with meadow and all 11 avatars. The corrected
+vertical fit kept the full roster in frame. Settled 120-frame intervals across
+two runs ranged from 28.06–34.15 ms p50 and 34.32–40.14 ms p95. tty2 was
+inactive during these runs, so this
+bundle has not been installed as a persistent physical-console session.
 
 The parity-v8 bundle passed isolated GPU fixtures with lazily loaded
 Calculator and Settings models, saved Music and Dinner props, and a Console

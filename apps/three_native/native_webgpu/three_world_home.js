@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import * as tsl from 'three/tsl';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { createNativeGridScene } from '@worldos/native-grid-scene';
+import { WORLD_HOME, createWorldJarRig, solveWorldHomeFrame,
+  worldCameraPosition } from '@worldos/world-home-composition';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
 import { createNativeMeadowScene } from './native_meadow_scene.js';
@@ -107,10 +109,13 @@ async function render() {
 
   const liveShell = typeof __nativeReadShellState === 'function' ||
     typeof __nativeReadShellFloor === 'function' || typeof __nativeWorldPoll === 'function';
-  let extent = liveShell ? (globalThis.__nativeWorldPeopleOnHome === true ? 4.6 : 3.8) : 5.8;
+  let extent = WORLD_HOME.orthoSize / WORLD_HOME.overviewZoom;
   const camera = new THREE.OrthographicCamera(-extent, extent, extent, -extent, .1, 100);
-  const center = new THREE.Vector3(-1.5, 0, -2.2);
-  const cameraOffset = new THREE.Vector3(5.3, 7.2, 8.1);
+  const defaultFrame = solveWorldHomeFrame([], { aspect: surfaceWidth / surfaceHeight });
+  const center = new THREE.Vector3(defaultFrame.x, .35, defaultFrame.z);
+  const worldEye = worldCameraPosition({ x: 0, y: 0, z: 0 },
+    WORLD_HOME.cameraRadius, Math.PI / 4, THREE.MathUtils.degToRad(40));
+  const cameraOffset = new THREE.Vector3(worldEye.x, worldEye.y, worldEye.z);
   let cameraManuallyPlaced = false;
   camera.position.copy(center).add(cameraOffset);
   camera.lookAt(center);
@@ -194,28 +199,18 @@ async function render() {
     __webgpuSurfaceStage(`WorldOS icon loaded: ${name}`);
   }
 
-  // Profile and placement from WorldOS engine/04-home-and-occupancy.js. The
-  // production jar uses live-scene refraction; this native slice uses Three's
-  // physical transmission until that shader's scene texture path is ported.
-  const jarProfile = [
-    [0, .020], [.110, .014], [.190, .022], [.228, .044],
-    [.240, .095], [.240, .330], [.238, .475], [.231, .515],
-    [.247, .545], [.252, .572], [.247, .596], [.233, .605],
-    [.219, .597], [.214, .560], [.214, .125], [.192, .066],
-    [.100, .054], [0, .056],
-  ];
-  const jar = new THREE.Mesh(
-    new THREE.LatheGeometry(jarProfile.map(([r, y]) => new THREE.Vector2(r, y)), 96),
+  // The browser owns this exact wall profile and tilt/spin hierarchy. The
+  // native material remains a temporary physical-transmission adapter until
+  // WorldOS's scene-texture refraction can run here.
+  const jarRig = createWorldJarRig(THREE,
     new THREE.MeshPhysicalMaterial({
       color: 0xf0f8f8, side: THREE.DoubleSide, transmission: .9,
       roughness: .09, metalness: 0, thickness: .045, ior: 1.46,
       clearcoat: 1, clearcoatRoughness: .05, transparent: true,
       opacity: .5, depthWrite: false,
-    }),
-  );
-  jar.position.set(1, core.TILE.H + .16, 0);
-  jar.rotation.z = THREE.MathUtils.degToRad(11);
-  homeRoot.add(jar);
+    }), { x: 1, z: 0 });
+  jarRig.tiltGroup.position.y = core.TILE.H + .02;
+  homeRoot.add(jarRig.tiltGroup);
   __webgpuSurfaceStage('WorldOS jar profile ready');
 
   const layoutKey = {
@@ -359,6 +354,8 @@ async function render() {
     }
     hud.setPeopleRows(people.rows(), peopleSource === 'sample');
     hud.setView(people.isOpen() ? 'people' : 'home', peopleSource === 'sample');
+    if (globalThis.__nativeWorldPeopleOnHome === true && !cameraManuallyPlaced)
+      seenRevision = null;
     __webgpuSurfaceStage(`WorldOS People source: ${peopleSource}${rows ? ` (${rows.length} present)` : ''}`);
   }
   let homeExtent = extent;
@@ -782,9 +779,10 @@ async function render() {
         Number.isInteger(p.tz)) || null);
     const jarX = Array.isArray(jarCell) ? jarCell[0] : jarCell?.tx;
     const jarZ = Array.isArray(jarCell) ? jarCell[1] : jarCell?.tz;
-    jar.visible = tileByName.get('jar').visible = Number.isInteger(jarX) && Number.isInteger(jarZ);
-    if (jar.visible) {
-      jar.position.set(jarX, core.TILE.H + .16, jarZ);
+    jarRig.tiltGroup.visible = tileByName.get('jar').visible =
+      Number.isInteger(jarX) && Number.isInteger(jarZ);
+    if (jarRig.tiltGroup.visible) {
+      jarRig.tiltGroup.position.set(jarX, core.TILE.H + .02, jarZ);
       tileByName.get('jar').position.set(jarX, 0, jarZ);
     }
     const allCells = [];
@@ -807,13 +805,34 @@ async function render() {
       if (prop?.kind === 'spaos' && Number.isInteger(prop.tx) &&
           Number.isInteger(prop.tz)) includeCell(prop.tx, prop.tz);
     }
-    if (jar.visible) includeCell(jarX, jarZ);
+    if (jarRig.tiltGroup.visible) includeCell(jarX, jarZ);
     if (allCells.length && !cameraManuallyPlaced) {
-      center.set(allCells.reduce((sum, cell) => sum + cell[0], 0) / allCells.length,
-        0, allCells.reduce((sum, cell) => sum + cell[1], 0) / allCells.length);
+      const frameItems = allCells.map(([x, z]) => ({ x, z }));
+      if (globalThis.__nativeWorldPeopleOnHome === true) {
+        for (const person of people.rows()) {
+          if (Number.isFinite(person.x) && Number.isFinite(person.z))
+            frameItems.push({ x: person.x, z: person.z,
+              halfX: .35, halfZ: .35, minY: 0, maxY: 1.3 });
+        }
+      }
+      const homeFrame = solveWorldHomeFrame(frameItems, {
+        az: Math.PI / 4, el: THREE.MathUtils.degToRad(40),
+        aspect: surfaceWidth / surfaceHeight,
+        verticalFit: globalThis.__nativeWorldPeopleOnHome === true, aimY: center.y,
+      });
+      center.set(homeFrame.x, .35, homeFrame.z);
+      homeExtent = WORLD_HOME.orthoSize / homeFrame.zoom;
       grid.position.x = center.x;
       grid.position.z = center.z;
       if (!people.isOpen()) {
+        extent = homeExtent;
+        camera.left = -extent * surfaceWidth / surfaceHeight;
+        camera.right = extent * surfaceWidth / surfaceHeight;
+        camera.top = extent;
+        camera.bottom = -extent;
+        camera.updateProjectionMatrix();
+        hud.resize(surfaceWidth, surfaceHeight, extent);
+        conversation.resize(surfaceWidth, surfaceHeight, extent);
         camera.position.copy(center).add(cameraOffset);
         camera.lookAt(center);
         uniforms.uCamPos.value.copy(camera.position);
@@ -832,10 +851,10 @@ async function render() {
       if (meadow.setOccupiedCells(nextOccupiedCells))
         __webgpuSurfaceStage(`WorldOS meadow cleared ${nextOccupiedCells.size} floor cells; ` +
           `${meadow.stats().blades} blades remain`);
-      if (jar.visible) meadow.setHole(jarX, jarZ);
+      if (jarRig.tiltGroup.visible) meadow.setHole(jarX, jarZ);
     }
     if (snapshotChanged)
-      __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jar.visible)} app cells, jar ${jar.visible}`);
+      __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jarRig.tiltGroup.visible)} app cells, jar ${jarRig.tiltGroup.visible}`);
   }
 
   const raycaster = new THREE.Raycaster();
@@ -923,6 +942,10 @@ async function render() {
     camera.updateProjectionMatrix();
     hud.resize(width, height, extent);
     conversation.resize(width, height, extent);
+    if (!cameraManuallyPlaced && !people.isOpen()) {
+      seenRevision = null;
+      applyLiveState();
+    }
     __webgpuSurfaceStage(`WorldOS surface resized: ${width}x${height}`);
   };
   globalThis.__worldNavigate = (kind, amount = 1) => {
@@ -1058,7 +1081,7 @@ async function render() {
     uniforms.uWave.value.set(waveX, waveZ,
       ((startedAt - waveStart) * waveUnitsPerMs) % 9.7, .46);
     uniforms.uWaveK.value.set(.42, .1, 1.25, 0);
-    jar.rotation.y = (startedAt - animationStart) * jarRadiansPerMs;
+    jarRig.spinGroup.rotation.y = (startedAt - animationStart) * jarRadiansPerMs;
     const updateEnd = frameTiming ? performance.now() : 0;
     renderer.render(scene, camera);
     const renderEnd = frameTiming ? performance.now() : 0;
