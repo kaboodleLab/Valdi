@@ -158,8 +158,70 @@ def probe_harness(door: Path) -> None:
         if not closed.get("ok") or closed.get("outcome", {}).get("windows", 0) < 1:
             raise RuntimeError(f"Shell harness did not close mapped Calculator: {closed}")
         destination = call("whatsapp.open", {"chat": "unavailable"}, 10)
-        if destination.get("ok") or destination.get("error", {}).get("code") != "app-unavailable":
-            raise RuntimeError(f"Shell harness silently dropped open arguments: {destination}")
+        if destination.get("verb") != "whatsapp.open" or \
+                destination.get("error", {}).get("code") in ("app-unavailable", "not-found"):
+            raise RuntimeError(f"Shell did not hand named open arguments to WhatsApp: {destination}")
+
+
+def probe_handoff(door: Path) -> None:
+    deadline = time.monotonic() + 80
+    while not door.is_socket() and time.monotonic() < deadline:
+        time.sleep(.25)
+    if not door.is_socket():
+        raise RuntimeError("SPAOS test World door did not open")
+    with socket.socket(socket.AF_UNIX) as world:
+        world.settimeout(40)
+        world.connect(str(door))
+        world.sendall(b'{"type":"hello","protocol":1}\n')
+        stream = world.makefile("r")
+        calculator = None
+        service = None
+        while time.monotonic() < deadline:
+            event = json.loads(stream.readline())
+            if event.get("type") == "apps":
+                calculator = next((app for app in event["apps"]
+                    if app.get("key") == "calculator"), None)
+                if calculator:
+                    evaluate = next((verb for verb in calculator.get("verbs", [])
+                        if verb.get("name") == "calculator.evaluate"), None)
+                    if not evaluate or "expression" not in evaluate.get("args", {}):
+                        raise RuntimeError("Calculator's authenticated Verb schema was not published")
+            elif event.get("type") == "services":
+                service = next((item for item in event.get("services", [])
+                    if item.get("key") == "system-info@worker"), None)
+                if service and "system.machine" not in {
+                        verb.get("name") for verb in service.get("verbs", [])}:
+                    raise RuntimeError("System Info service's Verb schema was not published")
+            if calculator and service:
+                break
+        else:
+            raise RuntimeError("SPAOS did not publish Calculator and System Info Verb schemas")
+        for index, (expression, answer) in enumerate((("12*3", "36"), ("7*6", "42"))):
+            call_id = f"native-handoff-{index}"
+            world.sendall((json.dumps({"type": "call", "verb": "calculator.evaluate",
+                "args": {"expression": expression}, "callId": call_id}) + "\n").encode())
+            while time.monotonic() < deadline:
+                event = json.loads(stream.readline())
+                if event.get("type") != "call_result" or event.get("callId") != call_id:
+                    continue
+                result = event["result"]
+                if not result.get("ok") or answer not in json.dumps(result):
+                    raise RuntimeError(f"Calculator did not evaluate {expression}: {result}")
+                break
+            else:
+                raise RuntimeError(f"No Calculator result for {expression}")
+        world.sendall((json.dumps({"type": "call", "verb": "system.machine",
+            "args": {}, "callId": "native-service-0"}) + "\n").encode())
+        while time.monotonic() < deadline:
+            event = json.loads(stream.readline())
+            if event.get("type") != "call_result" or event.get("callId") != "native-service-0":
+                continue
+            result = event["result"]
+            if not result.get("ok") or result.get("verb") != "system.machine":
+                raise RuntimeError(f"Headless System Info service did not answer: {result}")
+            break
+        else:
+            raise RuntimeError("No headless System Info service answer")
 
 
 def main() -> None:
@@ -179,8 +241,11 @@ def main() -> None:
                         help="verify live XDG install and removal reach the World launcher")
     parser.add_argument("--test-harness", action="store_true",
                         help="call Shell-owned verbs through SPAOS's isolated World test door")
+    parser.add_argument("--test-handoff", action="store_true",
+                        help="call a stopped SPAOS app Verb through native Shell handoff")
     args = parser.parse_args()
-    if sum((args.expect_shell_unready, args.test_host_refresh, args.test_harness)) > 1:
+    if sum((args.expect_shell_unready, args.test_host_refresh, args.test_harness,
+            args.test_handoff)) > 1:
         parser.error("choose one Shell lifecycle test mode")
     runtime_parent = os.environ.get("XDG_RUNTIME_DIR")
     host_display = os.environ.get("WAYLAND_DISPLAY")
@@ -224,7 +289,7 @@ def main() -> None:
         )
         if args.test_host_refresh:
             environment["VALDI_SHELL_CATALOG_POLL_MS"] = "1000"
-        if args.test_harness:
+        if args.test_harness or args.test_handoff:
             environment["SPAOS_CHANNEL_DOOR"] = "1"
         appd = args.desktop / "target/release/spaos-appd"
         if appd.is_file():
@@ -267,6 +332,10 @@ def main() -> None:
                 if args.test_harness:
                     probe_harness(Path(runtime_parent) / f"{socket_name}.apps" / "world.sock")
                     print("SPAOS native Shell harness passed: list, open, move, show, focus and close Calculator")
+                    return
+                if args.test_handoff:
+                    probe_handoff(Path(runtime_parent) / f"{socket_name}.apps" / "world.sock")
+                    print("SPAOS native Shell handoff passed: stopped Calculator and headless System Info answered")
                     return
                 if args.test_host_refresh:
                     host_pattern = r"published \d+ authenticated SPAOS apps, (\d+) host apps"
@@ -348,7 +417,7 @@ def main() -> None:
         for leftover in (Path(runtime_parent) / socket_name,
                          Path(runtime_parent) / f"{socket_name}.lock"):
             leftover.unlink(missing_ok=True)
-        if args.test_harness:
+        if args.test_harness or args.test_handoff:
             shutil.rmtree(Path(runtime_parent) / f"{socket_name}.apps", ignore_errors=True)
 
 

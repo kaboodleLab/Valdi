@@ -6,9 +6,11 @@ import { spawn } from 'node:child_process';
 import { CompositorClient } from '@spaos/compositor-client';
 import { PROTOCOL_VERSION } from '@spaos/shell-protocol';
 import { SettingsStore } from '@spaos/settings';
-import { partitionHarnessVerbs, worldVerbBrief } from '@spaos/verbs';
+import { partitionHarnessVerbs, worldVerbBrief, worldVerbBriefForOwner,
+  worldVerbRosterChanged } from '@spaos/verbs';
 import { probeSpaosCatalog, scanHostApps } from './probe_spaos_catalog.mjs';
 import { handleNativeShellHarness } from './native_shell_harness.mjs';
+import { createNativeShellHandoff } from './native_shell_handoff.mjs';
 import { requestFromNativeUi } from './native_shell_ui_requests.mjs';
 
 const MAX_UI_LINE = 8192;
@@ -25,10 +27,20 @@ function shellFd() {
   if (!/^\d{1,6}$/.test(raw) || Number(raw) < 3) throw new Error('Invalid SPAOS Shell descriptor');
   return Number(raw);
 }
-function catalogRows(snapshot, hostApps, hidden, byApp) {
+function catalogRows(snapshot, hostApps, hidden, byApp, liveVerbs) {
   return [...snapshot.apps, ...hostApps].map(entry => {
     const key = entry.world ? entry.id.slice('world:'.length) : entry.id;
     const openers = entry.world ? byApp.get(key) ?? [] : [];
+    const declared = (entry.verbs ?? []).flatMap(name => {
+      const description = entry.verbDescriptions?.[name];
+      const fallback = entry.verbPresentations?.[name] ??
+        (description ? { description } : undefined);
+      const brief = worldVerbBriefForOwner(name, key,
+        liveVerbs.find(verb => verb.name === name), fallback);
+      return brief ? [brief] : [];
+    });
+    const verbs = [...declared, ...openers.filter(verb =>
+      !(entry.verbs ?? []).includes(verb.name)).map(verb => worldVerbBrief(verb.name, verb))];
     return {
       key,
       name: entry.name,
@@ -38,9 +50,24 @@ function catalogRows(snapshot, hostApps, hidden, byApp) {
       ...(entry.worldIcon ? { worldIcon: entry.worldIcon } : {}),
       ...(entry.wmClass ? { appId: entry.wmClass } : {}),
       ...(hidden.has(entry.id) ? { hidden: true } : {}),
-      ...(openers.length ? { verbs: openers.map(verb =>
-        worldVerbBrief(verb.name, { ...verb, args: {} })) } : {}),
+      ...(verbs.length ? { verbs } : {}),
     };
+  });
+}
+function serviceRows(snapshot, liveVerbs) {
+  return snapshot.services.flatMap(service => {
+    const launch = service.launch;
+    if (!launch || launch.format !== 3) return [];
+    const key = `${launch.package}@${launch.component}`;
+    const verbs = (service.verbs ?? []).flatMap(name => {
+      const description = service.verbDescriptions?.[name];
+      const fallback = service.verbPresentations?.[name] ??
+        (description ? { description } : undefined);
+      const brief = worldVerbBriefForOwner(name, key,
+        liveVerbs.find(verb => verb.name === name), fallback);
+      return brief ? [brief] : [];
+    });
+    return [{ key, package: launch.package, component: launch.component, verbs }];
   });
 }
 
@@ -69,9 +96,14 @@ async function run() {
   const settings = new SettingsStore();
   let hostApps = [];
   let appViews = [];
+  let appVerbs = [];
   const harnessStarted = new Map();
+  const handoff = createNativeShellHandoff({ catalog: () => catalog,
+    floor: () => client.floor, starting: harnessStarted,
+    send: message => client.send(message), log });
   let publishedGeneration = 0;
   let publishedRows = '';
+  let publishedServiceRows = '';
   let instanceName = null;
   const sendUi = message => {
     if (!uiAuthenticated || !ui || ui.destroyed) return;
@@ -105,16 +137,26 @@ async function run() {
     if (client.settingsPath) await settings.open(client.settingsPath);
     const { host, byApp } = partitionHarnessVerbs(snapshot.apps);
     const rows = catalogRows(snapshot, hostApps,
-      new Set(settings.current.launcher.hiddenApps), byApp);
+      new Set(settings.current.launcher.hiddenApps), byApp, appVerbs);
     const rowFingerprint = JSON.stringify(rows);
-    if (snapshot.generation === publishedGeneration && rowFingerprint === publishedRows) return;
-    client.send({ type: 'publish_apps', catalogGeneration: snapshot.generation,
-      verbOwners: snapshot.verbOwners, apps: rows,
-      harness: host.map(verb => worldVerbBrief(verb.name, verb)) });
-    publishedGeneration = snapshot.generation;
-    publishedRows = rowFingerprint;
-    log(`published ${snapshot.apps.length} authenticated SPAOS apps, ${hostApps.length} host apps, ` +
-      `and ${snapshot.verbOwners.length} verb reservations`);
+    const services = serviceRows(snapshot, appVerbs);
+    const serviceFingerprint = JSON.stringify(services);
+    const generationChanged = snapshot.generation !== publishedGeneration;
+    if (generationChanged || rowFingerprint !== publishedRows) {
+      client.send({ type: 'publish_apps', catalogGeneration: snapshot.generation,
+        verbOwners: snapshot.verbOwners, apps: rows,
+        harness: host.map(verb => worldVerbBrief(verb.name, verb)) });
+      publishedGeneration = snapshot.generation;
+      publishedRows = rowFingerprint;
+      log(`published ${snapshot.apps.length} authenticated SPAOS apps, ${hostApps.length} host apps, ` +
+        `and ${snapshot.verbOwners.length} verb reservations`);
+    }
+    if (generationChanged || serviceFingerprint !== publishedServiceRows) {
+      client.send({ type: 'publish_services', catalogGeneration: snapshot.generation,
+        services });
+      publishedServiceRows = serviceFingerprint;
+      log(`published ${services.length} authenticated headless services`);
+    }
   };
   const refresh = () => {
     if (!catalogPromise) catalogPromise = publish().finally(() => { catalogPromise = null; });
@@ -171,6 +213,7 @@ async function run() {
   async function shutdown() {
     if (closed) return;
     closed = true;
+    handoff.stop();
     child?.kill('SIGTERM');
     ui?.destroy();
     server.close();
@@ -199,6 +242,15 @@ async function run() {
   });
   client.on('spaces', spaces => sendUi({ type: 'spaces', spaces }));
   client.on('app_views', views => { appViews = Array.isArray(views) ? views : []; });
+  client.on('verbs', verbs => {
+    if (!Array.isArray(verbs)) return;
+    const changed = worldVerbRosterChanged(appVerbs, verbs);
+    appVerbs = verbs;
+    handoff.onVerbs(verbs);
+    if (changed && catalog)
+      refresh().catch(error => log(`live Verb roster refresh failed: ${String(error)}`));
+  });
+  client.on('verb_result', result => { handoff.onResult(result); });
   client.on('run-harness-verb', p => {
     try {
       if (!catalog) throw new Error('Shell catalog has not loaded');
@@ -210,7 +262,7 @@ async function run() {
         for (const request of answer.requests) client.send(request);
         if (answer.startedApp) harnessStarted.set(answer.startedApp, Date.now());
         client.send({ type: 'harness_result', callId: p.callId, result: answer.result });
-      } else client.send({ type: 'harness_result', callId: p.callId, result: {
+      } else if (!handoff.request(p)) client.send({ type: 'harness_result', callId: p.callId, result: {
         ok: false, verb: p.verb,
         error: { code: 'not-found', message: `nothing here answers ${p.verb}`,
           hint: 'app.list names the apps that are open' }, t: Date.now(),

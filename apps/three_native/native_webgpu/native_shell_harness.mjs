@@ -36,6 +36,7 @@ export function handleNativeShellHarness(p, { apps, spaces, floor, views, starti
       return error('not-found', `there is no ${open} to open`);
     // A named destination needs the app's own handler. Do not claim success for
     // a chat, URL or document that this first native harness cannot hand off.
+    if (Object.keys(args).length && entry.verbs?.includes(p.verb)) return null;
     if (Object.keys(args).length)
       return error('app-unavailable', `${entry.name} cannot receive open arguments from this Shell yet`,
         'Open the app first, then use its own controls.');

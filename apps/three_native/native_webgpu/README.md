@@ -426,18 +426,25 @@ the Shell publishes its four floor verbs and each installed app's opener, then
 calls `app.list`, `calculator.open`, `app.move`, `view.show`, and `app.close` through
 the compositor. It verifies Calculator maps on the requested tile and a repeated
 open focuses that copy. This passed with all 28 installed SPAOS apps authenticated.
+It also hands a named WhatsApp opener to the app; the unlinked test account
+returned WhatsApp's own `not-linked` answer. With `--test-handoff`, a stopped
+Calculator receives `calculator.evaluate` after it registers its Verb, a second
+call uses its live channel, and the headless System Info worker answers
+`system.machine`. The controller publishes the one authenticated service with
+the same catalog generation as the app roster. Both handoffs passed on Linux.
 The Electron argument must be the exact installed executable path used in the
 Package Manager launch records; a CLI shim changes the launch digest and correctly
 causes the catalog to reject those app presentations.
 `test_native_shell_headless.sh` accepts `SHELL_BUNDLE` for testing a versioned
 Space UI bundle alongside a versioned World bundle.
 
-The controller now answers the Shell-owned floor verbs and no-argument app
-openers from the current authenticated catalog. It refuses an opener carrying
-arguments until app handoff is implemented, so named destinations are not silently
-discarded. The controller still omits app-specific Verb proxies and handoff,
-headless service publication, WorldOS conversation/voice integration, backdrop and room-light
-presentation, and windowed titlebar. The controller refreshes both host
+The controller now answers the Shell-owned floor verbs and app openers from
+the current authenticated catalog. It publishes installed app and service Verb
+metadata, starts a stopped owner from its digest-bound record, waits for its
+registration, and re-enters the compositor's invoke path so the compositor
+applies its usual provenance and user-go policy. A call that times out receives
+an explicit refusal. WorldOS conversation/voice integration, backdrop and
+room-light presentation, and windowed titlebar remain. The controller refreshes both host
 desktop entries and the Package Manager catalog every minute, and republishes
 when either launcher roster or hidden-app settings change. It reads those
 settings from the file SPAOS gives it over the Shell channel. The native taskbar is a
