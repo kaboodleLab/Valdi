@@ -416,13 +416,19 @@ the taskbar and 224 inside it. Existing tty sessions remained running.
 native World and native Space UI, requests a Shell-only restart, and checks
 that two Shell processes each report readiness after their first GPU frame
 while the same World process stays ready. This passed on the Linux test host.
+With `--expect-shell-unready` and a nonexistent Shell bundle, the same harness
+checks that World becomes ready while Shell stays unready. With
+`--test-host-refresh`, it installs and removes a temporary XDG desktop entry
+and checks that both the controller's published roster and World's received
+app count change and return. Both cases passed in isolated Linux sessions.
 `test_native_shell_headless.sh` accepts `SHELL_BUNDLE` for testing a versioned
 Space UI bundle alongside a versioned World bundle.
 
 The controller still omits the Electron shell's voice and harness responders,
 live Verb proxy descriptions, hidden-app settings, backdrop and room-light
-presentation, and windowed titlebar. Host desktop entries are scanned at boot;
-the Package Manager catalog refreshes every minute. The native taskbar is a
+presentation, and windowed titlebar. The controller refreshes both host
+desktop entries and the Package Manager catalog every minute, and republishes
+when either launcher roster changes. The native taskbar is a
 functional first surface, not visual parity with SPAOS's existing Space UI.
 Keep testing it in isolated sessions until those owner duties and UI surfaces
 are ported and reviewed.

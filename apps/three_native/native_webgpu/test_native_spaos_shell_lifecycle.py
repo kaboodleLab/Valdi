@@ -46,6 +46,20 @@ def wait_for_status(process: subprocess.Popen, endpoint: Path, token: str,
     raise TimeoutError("SPAOS Shell lifecycle state did not become ready")
 
 
+def wait_for_log(process: subprocess.Popen, log_path: Path, pattern: str,
+                 predicate, timeout: float = 20) -> int:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            raise RuntimeError(f"SPAOS exited during Shell catalog test: {process.returncode}")
+        values = [int(value) for value in re.findall(pattern,
+            log_path.read_text(errors="replace"))]
+        if values and predicate(values):
+            return values[-1]
+        time.sleep(.25)
+    raise TimeoutError(f"SPAOS log did not reach expected {pattern}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("spaos", type=Path, help="SPAOS compositor binary")
@@ -57,13 +71,22 @@ def main() -> None:
     parser.add_argument("desktop", type=Path, help="SPAOS desktop root")
     parser.add_argument("electron", type=Path, help="installed app runtime binary")
     parser.add_argument("--state", type=Path, help="optional read-only WorldOS world.json")
+    parser.add_argument("--expect-shell-unready", action="store_true",
+                        help="verify a missing renderer bundle cannot make Shell ready")
+    parser.add_argument("--test-host-refresh", action="store_true",
+                        help="verify live XDG install and removal reach the World launcher")
     args = parser.parse_args()
+    if args.expect_shell_unready and args.test_host_refresh:
+        parser.error("choose one Shell lifecycle test mode")
     runtime_parent = os.environ.get("XDG_RUNTIME_DIR")
     host_display = os.environ.get("WAYLAND_DISPLAY")
     node = shutil.which("node")
     if not runtime_parent or not host_display or not node:
         parser.error("XDG_RUNTIME_DIR, WAYLAND_DISPLAY and Node are required")
-    for name in ("spaos", "native", "world_bundle", "shell_bundle", "assets", "controller", "desktop", "electron"):
+    required_paths = ("spaos", "native", "world_bundle", "assets", "controller", "desktop", "electron")
+    if not args.expect_shell_unready:
+        required_paths += ("shell_bundle",)
+    for name in required_paths:
         if not getattr(args, name).exists():
             parser.error(f"{name} does not exist: {getattr(args, name)}")
 
@@ -95,6 +118,8 @@ def main() -> None:
             WORLD_OS_NATIVE_ASSETS=str(args.assets.resolve()),
             SDL_VIDEODRIVER="wayland",
         )
+        if args.test_host_refresh:
+            environment["VALDI_SHELL_CATALOG_POLL_MS"] = "1000"
         appd = args.desktop / "target/release/spaos-appd"
         if appd.is_file():
             environment["SPAOS_APPD_BIN"] = str(appd)
@@ -112,9 +137,49 @@ def main() -> None:
                 stderr=subprocess.STDOUT, start_new_session=True,
             )
             try:
+                if args.expect_shell_unready:
+                    if args.shell_bundle.exists():
+                        raise RuntimeError("Failure test requires a nonexistent Shell bundle")
+                    before = wait_for_status(process, endpoint, token,
+                        lambda status: status["targets"]["world"]["ready"])
+                    deadline = time.monotonic() + 6
+                    while time.monotonic() < deadline:
+                        status = request(endpoint, token, {"op": "status"})
+                        if status["targets"]["shell"]["ready"]:
+                            raise RuntimeError("SPAOS marked a missing native Shell renderer ready")
+                        time.sleep(.25)
+                    output = log_path.read_text(errors="replace")
+                    if "native Space UI frame presented; Shell lifecycle ready" in output:
+                        raise RuntimeError("Shell controller reported readiness without a GPU frame")
+                    if "Cannot open JavaScript bundle" not in output:
+                        raise RuntimeError("Failure test did not reach the missing renderer bundle")
+                    print("SPAOS Shell failure path passed: World ready, renderer failed, Shell unready")
+                    return
                 before = wait_for_status(process, endpoint, token,
                     lambda status: status["targets"]["world"]["ready"] and
                     status["targets"]["shell"]["ready"])
+                if args.test_host_refresh:
+                    host_pattern = r"published \d+ authenticated SPAOS apps, (\d+) host apps"
+                    world_pattern = r"WorldOS app catalog received: (\d+) visible apps"
+                    initial_host = wait_for_log(process, log_path, host_pattern, lambda values: True)
+                    initial_world = wait_for_log(process, log_path, world_pattern, lambda values: True)
+                    app_dir = runtime / "data" / "applications"
+                    app_dir.mkdir(parents=True, exist_ok=True)
+                    fixture = app_dir / "valdi-refresh-fixture.desktop"
+                    fixture.write_text("[Desktop Entry]\nType=Application\n"
+                                       "Name=Valdi Refresh Fixture\nExec=/usr/bin/true\n")
+                    wait_for_log(process, log_path, host_pattern,
+                                 lambda values: (initial_host + 1) in values)
+                    wait_for_log(process, log_path, world_pattern,
+                                 lambda values: (initial_world + 1) in values)
+                    fixture.unlink()
+                    wait_for_log(process, log_path, host_pattern,
+                                 lambda values: len(values) >= 3 and values[-1] == initial_host)
+                    wait_for_log(process, log_path, world_pattern,
+                                 lambda values: len(values) >= 3 and values[-1] == initial_world)
+                    print(f"SPAOS native catalog refresh passed: {initial_host} -> "
+                          f"{initial_host + 1} -> {initial_host} host apps; World updated")
+                    return
                 identity = secrets.token_hex(16)
                 submitted = request(endpoint, token, {"op": "submit", "session": before["session"],
                     "request_id": identity, "target": "shell", "action": "restart"})

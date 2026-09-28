@@ -5,7 +5,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { CompositorClient } from '@spaos/compositor-client';
 import { PROTOCOL_VERSION } from '@spaos/shell-protocol';
-import { probeSpaosCatalog } from './probe_spaos_catalog.mjs';
+import { probeSpaosCatalog, scanHostApps } from './probe_spaos_catalog.mjs';
 import { requestFromNativeUi } from './native_shell_ui_requests.mjs';
 
 const MAX_UI_LINE = 8192;
@@ -58,6 +58,7 @@ async function run() {
   let catalog = null;
   let hostApps = [];
   let publishedGeneration = 0;
+  let publishedRows = '';
   let instanceName = null;
   const sendUi = message => {
     if (!uiAuthenticated || !ui || ui.destroyed) return;
@@ -83,11 +84,18 @@ async function run() {
       catalog = loaded.catalog;
       hostApps = loaded.host;
       snapshot = loaded.snapshot;
-    } else snapshot = await catalog.refresh();
-    if (snapshot.generation === publishedGeneration) return;
+    } else {
+      const [updated, host] = await Promise.all([catalog.refresh(), scanHostApps(desktopRoot)]);
+      snapshot = updated;
+      hostApps = host.host;
+    }
+    const rows = catalogRows(snapshot, hostApps);
+    const rowFingerprint = JSON.stringify(rows);
+    if (snapshot.generation === publishedGeneration && rowFingerprint === publishedRows) return;
     client.send({ type: 'publish_apps', catalogGeneration: snapshot.generation,
-      verbOwners: snapshot.verbOwners, apps: catalogRows(snapshot, hostApps), harness: [] });
+      verbOwners: snapshot.verbOwners, apps: rows, harness: [] });
     publishedGeneration = snapshot.generation;
+    publishedRows = rowFingerprint;
     log(`published ${snapshot.apps.length} authenticated SPAOS apps, ${hostApps.length} host apps, ` +
       `and ${snapshot.verbOwners.length} verb reservations`);
   };
@@ -211,9 +219,10 @@ async function run() {
     const expectedStop = closed;
     shutdown().then(() => { process.exitCode = expectedStop ? 0 : code || 1; });
   });
+  const pollMs = Number(process.env.VALDI_SHELL_CATALOG_POLL_MS);
   const refreshTimer = setInterval(() => {
     if (connected) refresh().catch(error => log(`catalog refresh failed: ${String(error)}`));
-  }, 60_000);
+  }, Number.isSafeInteger(pollMs) && pollMs >= 1_000 ? pollMs : 60_000);
   refreshTimer.unref();
   process.on('SIGTERM', () => shutdown());
   process.on('SIGINT', () => shutdown());

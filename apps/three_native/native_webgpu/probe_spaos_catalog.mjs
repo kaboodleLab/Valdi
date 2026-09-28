@@ -7,6 +7,11 @@ import { resolveAppRoot } from '@spaos/app-roots';
 import { dataDirs, dataHome, loadDenylist, scanApplications } from '@spaos/desktop-entries';
 import { packageManagerClientPaths } from '@spaos/package-manager-client';
 
+export async function scanHostApps(desktopRoot) {
+  const denied = await loadDenylist(desktopRoot);
+  return { host: await scanApplications(denied), deniedCount: denied.size };
+}
+
 // Read-only headless probe for the next Shell controller. Import SPAOS's
 // receipt and catalog code directly; do not duplicate its launch rules here.
 export async function probeSpaosCatalog({ desktopRoot, electronBinary, instanceName,
@@ -28,11 +33,10 @@ export async function probeSpaosCatalog({ desktopRoot, electronBinary, instanceN
     report,
   });
   const catalog = new AppCatalog(() => installed.load(), report);
-  const [snapshot, denied] = await Promise.all([
-    catalog.refresh(), loadDenylist(desktopRoot),
+  const [snapshot, { host, deniedCount }] = await Promise.all([
+    catalog.refresh(), scanHostApps(desktopRoot),
   ]);
-  const host = await scanApplications(denied);
-  return { catalog, snapshot, host, deniedCount: denied.size, layout: layout?.layout ?? null };
+  return { catalog, snapshot, host, deniedCount, layout: layout?.layout ?? null };
 }
 
 if (process.argv[1]?.endsWith('probe_spaos_catalog.cjs')) {
