@@ -287,6 +287,9 @@ int main(int argc, char** argv) {
         contents << source.rdbuf();
         script = contents.str();
     }
+    // A dock press also focuses this Wayland window. SDL's default drops that
+    // first press, which would make the first grip drag or button click inert.
+    if (shellClient) SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
         return 1;
@@ -797,7 +800,8 @@ int main(int argc, char** argv) {
                     });
             }
             if (interactive && (event.type == SDL_EVENT_MOUSE_MOTION ||
-                                event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)) {
+                                event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+                                (shellClient && event.type == SDL_EVENT_MOUSE_BUTTON_UP))) {
                 int windowWidth = 0, windowHeight = 0, pixelWidth = 0, pixelHeight = 0;
                 SDL_GetWindowSize(window, &windowWidth, &windowHeight);
                 SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight);
@@ -811,12 +815,14 @@ int main(int argc, char** argv) {
                 const double y = logicalY * pixelHeight / windowHeight;
                 const bool clicked = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
                                      event.button.button == SDL_BUTTON_LEFT;
+                const bool released = event.type == SDL_EVENT_MOUSE_BUTTON_UP &&
+                                      event.button.button == SDL_BUTTON_LEFT;
                 runtime->dispatchSynchronouslyOnJsThread(STRING_LITERAL("world_home_pointer"),
                     [&](Valdi::JavaScriptEntryParameters& entry) {
                         auto* js = entry.jsContext.getJsiRuntime();
                         auto handler = js->global().getProperty(*js, "__worldPointer");
                         if (handler.isObject())
-                            handler.asObject(*js).asFunction(*js).call(*js, x, y, clicked);
+                            handler.asObject(*js).asFunction(*js).call(*js, x, y, clicked, released);
                     });
             }
             if (!script.empty() && event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {

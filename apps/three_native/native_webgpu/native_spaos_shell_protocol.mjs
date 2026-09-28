@@ -9,14 +9,16 @@ export function createNativeSpaosShellProtocol({ protocolVersion, send, onState,
   let windows = [];
   let spaces = [];
   let windowsReceived = false;
+  let dockPosition = null;
   let stopped = false;
 
   const request = value => send(JSON.stringify(value));
+  const dockLayout = () => nativeDockLayout(output, windows, dockPosition);
   function placeDock() {
     // The controller may already know a window that was not in the first
     // hello. Wait for its initial window snapshot before reporting hit bounds.
     if (!windowsReceived) return;
-    const dock = nativeDockLayout(output, windows);
+    const dock = dockLayout();
     if (dock) request({ type: 'set_dock_rect', x: dock.x, y: dock.y,
       w: dock.w, h: dock.h, home: dock.home });
   }
@@ -79,5 +81,14 @@ export function createNativeSpaosShellProtocol({ protocolVersion, send, onState,
     if (!ready || (id !== 0 && !spaces.some(space => space.id === id))) return false;
     return request({ type: 'switch_space', id });
   }
-  return { ingest, focus, close, switchSpace, getState: () => ({ output, windows, spaces, ready }) };
+  function setDockPosition(position, report = true) {
+    if (!ready || !windowsReceived) return null;
+    dockPosition = position && Number.isFinite(position.x) && Number.isFinite(position.y)
+      ? { x: position.x, y: position.y } : null;
+    const dock = dockLayout();
+    if (report) placeDock();
+    return dock;
+  }
+  return { ingest, focus, close, switchSpace, dockLayout, setDockPosition,
+    getState: () => ({ output, windows, spaces, ready }) };
 }

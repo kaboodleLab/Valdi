@@ -392,13 +392,16 @@ surfaces remain separate work.
 
 `native_spaos_shell.js` is a separate Valdi/Hermes/Three/Dawn Space UI. It
 maps the transparent `spaos-space-ui` Wayland surface and draws a 48-pixel
-floating dock, bounded to the right half of the output. World, focus, and
-close buttons request compositor actions. The dock's visible bounds and
-SPAOS input rectangle share one geometry calculation; the controller accepts
-only that current rectangle. A compositor snapshot refresh resolves startup
-races between output resize and the first window list. SPAOS still owns window
-management and composition. The World client remains a distinct process and
-channel. Dragging the dock and the production window-management card remain
+floating dock that rests in the right half of the output. World, focus, and
+close buttons request compositor actions. Its grip drags the pill within the
+output; double-clicking the grip returns it home. The dock's visible bounds
+and SPAOS input rectangle share one geometry calculation. The controller
+accepts only the exact current size, with the home position or an in-bounds
+dragged position. A compositor snapshot refresh resolves startup races between
+output resize and the first window list. The native host enables SDL's focus
+click-through hint so the first press on the dock reaches its button or grip.
+SPAOS still owns window management and composition. The World client remains
+a distinct process and channel. The production window-management card remains
 to be ported.
 
 `run_spaos_shell_controller.sh` starts a plain Node controller that owns
@@ -419,7 +422,7 @@ the controller connected.
 
 The Linux headless test runs an isolated Sway and SPAOS session through
 `test_native_shell_headless.sh`. It verifies the Shell handshake, role mapping,
-and a GPU readback with a transparent field and visible dock. The v15 fixture
+and a GPU readback with a transparent field and visible dock. The v17 fixture
 passed at 1600×900, with alpha 0 in the field and nonzero alpha in the pill.
 Existing tty sessions are left alone.
 

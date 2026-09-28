@@ -2,7 +2,6 @@ import * as THREE from 'three/webgpu';
 import { PROTOCOL_VERSION } from '@spaos/shell-protocol';
 import { createNativeText } from './native_shell_hud.js';
 import { createNativeSpaosShellProtocol } from './native_spaos_shell_protocol.mjs';
-import { nativeDockLayout } from './native_space_dock.mjs';
 
 // SPAOS remains the compositor and owns all window and space operations.
 // This scene presents its snapshots and requests in a bounded floating dock.
@@ -47,6 +46,8 @@ async function run() {
   let frame = 0;
   let announced = false;
   let captured = false;
+  let drag = null;
+  let lastGripClick = 0;
 
   function clearShapes() {
     for (const mesh of shapes) {
@@ -79,6 +80,27 @@ async function run() {
     shapes.push(mesh);
     return mesh;
   }
+  function mark(x, y, radius = 1.4) {
+    const mesh = new THREE.Mesh(new THREE.CircleGeometry(radius, 8),
+      new THREE.MeshBasicMaterial({ color: 0xd9e2ed, transparent: true, opacity: .76,
+        depthTest: false, depthWrite: false, toneMapped: false }));
+    mesh.position.set(x - width / 2, height / 2 - y, .02);
+    mesh.renderOrder = shapes.length;
+    scene.add(mesh);
+    shapes.push(mesh);
+  }
+  function closeMark(x, y) {
+    for (const angle of [-Math.PI / 4, Math.PI / 4]) {
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(11, 1.7),
+        new THREE.MeshBasicMaterial({ color: 0xe9eef6, transparent: true, opacity: .9,
+          depthTest: false, depthWrite: false, toneMapped: false }));
+      mesh.position.set(x - width / 2, height / 2 - y, .02);
+      mesh.rotation.z = angle;
+      mesh.renderOrder = shapes.length;
+      scene.add(mesh);
+      shapes.push(mesh);
+    }
+  }
   function text(value, x, y, size = 15, color = [236, 240, 247]) {
     const { texture, width: tw, height: th } = makeText(String(value).slice(0, 25), color);
     const w = size * tw / th;
@@ -93,11 +115,16 @@ async function run() {
   }
   function rebuild() {
     clearShapes();
-    const dock = nativeDockLayout({ width, height }, state.windows);
+    const dock = shell.dockLayout();
     if (!dock) return;
     roundedRectangle(dock.x, dock.y, dock.w, dock.h, 24, 0x1e2631, .83);
     for (const button of dock.buttons) {
       const y = dock.y + 8;
+      if (button.kind === 'grip') {
+        for (const dx of [8, 15]) for (const dy of [15, 23, 31])
+          mark(button.x + dx, dock.y + dy);
+        continue;
+      }
       const focused = button.kind === 'window' &&
         state.windows.some(window => window.id === button.id && window.focused);
       roundedRectangle(button.x, y, button.width, 32, 16,
@@ -108,7 +135,7 @@ async function run() {
         hits.push({ x: button.x, y, w: button.width, h: 32,
           action: () => shell.switchSpace(0) });
       } else {
-        text('×', button.x + button.width - 22, y + 7, 18);
+        closeMark(button.x + button.width - 14, y + 16);
         hits.push({ x: button.x + button.width - 28, y, w: 28, h: 32,
           action: () => shell.close(button.id) });
         hits.push({ x: button.x, y, w: button.width - 28, h: 32,
@@ -140,8 +167,35 @@ async function run() {
       next.output.height); },
     onQuit: () => { stopped = true; __nativeRequestQuit(); } });
   globalThis.__worldResize = resize;
-  globalThis.__worldPointer = (x, y, clicked) => {
+  globalThis.__worldPointer = (x, y, clicked, released) => {
+    if (released && drag) {
+      if (drag.moved) {
+        shell.setDockPosition({ x: x - drag.dx, y: y - drag.dy });
+        lastGripClick = 0;
+      }
+      drag = null;
+      dirty = true;
+      return;
+    }
+    if (drag && !clicked) {
+      if (Math.hypot(x - drag.startX, y - drag.startY) > 3) drag.moved = true;
+      if (drag.moved && shell.setDockPosition({ x: x - drag.dx, y: y - drag.dy }, false))
+        dirty = true;
+      return;
+    }
     if (!clicked) return;
+    const dock = shell.dockLayout();
+    const grip = dock?.buttons[0];
+    if (grip && x >= grip.x && x < grip.x + grip.width &&
+        y >= dock.y && y < dock.y + dock.h) {
+      const now = performance.now();
+      if (now - lastGripClick < 350) shell.setDockPosition(null);
+      else drag = { dx: x - dock.x, dy: y - dock.y,
+        startX: x, startY: y, moved: false };
+      lastGripClick = now;
+      dirty = true;
+      return;
+    }
     for (const hit of hits) {
       if (x >= hit.x && x < hit.x + hit.w && y >= hit.y && y < hit.y + hit.h) {
         hit.action();
@@ -178,7 +232,7 @@ async function run() {
       const rgba = new Uint8Array(pixels);
       const centerAlpha = rgba[Math.floor(height / 2) * stride +
         Math.floor(width / 2) * 4 + 3];
-      const dock = nativeDockLayout({ width, height }, state.windows);
+      const dock = shell.dockLayout();
       const dockAlpha = rgba[(dock.y + Math.floor(dock.h / 2)) * stride +
         (dock.x + Math.floor(dock.w / 2)) * 4 + 3];
       __nativeSaveFrame(pixels, width, height, stride,
@@ -208,7 +262,7 @@ async function run() {
       stopped = true;
       __webgpuSurfaceDone(false, String(error?.stack || error));
       __nativeRequestQuit();
-    }), 33);
+    }), drag ? 16 : 33);
   }
   await draw();
 }

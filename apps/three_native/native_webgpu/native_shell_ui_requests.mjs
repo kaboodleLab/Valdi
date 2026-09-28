@@ -11,10 +11,15 @@ export function requestFromNativeUi(value, { output, windows, spaces }) {
     case 'set_dock_rect':
       {
         const dock = nativeDockLayout(output, windows);
-        return dock && value.home === true && value.x === dock.x &&
-          value.y === dock.y && value.w === dock.w && value.h === dock.h
-          ? { type: 'set_dock_rect', x: dock.x, y: dock.y,
-            w: dock.w, h: dock.h, home: true } : null;
+        const x = value.x, y = value.y;
+        const bounded = value.home === true
+          ? x === dock?.x && y === dock?.y
+          : value.home === false && Number.isSafeInteger(x) && Number.isSafeInteger(y) &&
+            x >= 0 && y >= 0 && x + dock?.w <= output?.width &&
+            y + dock?.h <= output?.height;
+        return dock && bounded && value.w === dock.w && value.h === dock.h
+          ? { type: 'set_dock_rect', x, y,
+            w: dock.w, h: dock.h, home: value.home } : null;
       }
     case 'focus':
     case 'close':
