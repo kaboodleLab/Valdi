@@ -83,8 +83,11 @@ and `Walk` animations; Back returns to the home floor. The sample is visibly mar
 Movement, pathfinding, crowd avoidance and arrival/departure state come from
 WorldOS's pure `character-world.js`, bundled into Hermes with a native Three
 visual adapter. The adapter shares equivalent skeleton palettes inside each
-avatar, as WorldOS does. Gestures, conversations and portal interactions are
-still browser-World features.
+avatar, as WorldOS does. In the People view, the People control opens a native
+roster panel. A person row or visible body selects that person; Find on Grid
+reframes the camera around them. Pause Wandering calls the shared character
+simulation's pause door. The panel marks simulated and live presence distinctly.
+Gestures, conversations and portal interactions are still browser-World features.
 The SPAOS floor and app channel continue updating while People is open.
 When `SPAOS_WORLD_OS_ROOT` points to the WorldOS tree of the running SPAOS
 agent service and `SPAOS_AGENT_SERVICE=1`, `run_spaos_world.sh` starts a

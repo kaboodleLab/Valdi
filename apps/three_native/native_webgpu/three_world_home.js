@@ -292,6 +292,11 @@ async function render() {
         resolve, reject);
     }),
     stage: message => __webgpuSurfaceStage(message),
+    onFocus: (x, z) => {
+      camera.position.set(x, 5.2, z + 7.8);
+      camera.lookAt(x, 0, z);
+      people.faceCamera();
+    },
   });
   let peopleSource = 'sample';
   let rosterSignature = '';
@@ -312,6 +317,7 @@ async function render() {
       peopleSource = 'live';
       people.setPeople(rows);
     }
+    hud.setPeopleRows(people.rows(), peopleSource === 'sample');
     hud.setView(people.isOpen() ? 'people' : 'home', peopleSource === 'sample');
     __webgpuSurfaceStage(`WorldOS People source: ${peopleSource}${rows ? ` (${rows.length} present)` : ''}`);
   }
@@ -326,6 +332,7 @@ async function render() {
       camera.position.set(0, 5.2, 7.8);
       camera.lookAt(0, 0, 0);
       people.enter();
+      hud.setPeopleRows(people.rows(), peopleSource === 'sample');
     } else {
       extent = homeExtent;
       people.leave();
@@ -349,7 +356,13 @@ async function render() {
     makeText,
     stage: message => __webgpuSurfaceStage(message),
     onBack: () => globalThis.__worldBack(),
-    onPeople: () => setPeopleOpen(!people.isOpen()),
+    onPeople: () => {
+      if (people.isOpen()) hud.togglePeoplePanel();
+      else setPeopleOpen(true);
+    },
+    onSelectPerson: id => people.select(id),
+    onFindPerson: id => people.focus(id),
+    onPausePeople: paused => people.setPaused(paused),
     onOpen: (key, selectedTile) => {
       if (typeof __nativeWorldOpen !== 'function' || !nativeApps.has(key)) return;
       const tile = chooseLaunchTile(selectedTile, occupiedCells, center);
@@ -804,7 +817,18 @@ async function render() {
       sequence: ++inputSequence, at: performance.now(), afterFrame: frame,
     });
     if (hud.pointer(x, y, clicked) || hud.isOpen()) return;
-    if (people.isOpen()) return;
+    if (people.isOpen()) {
+      if (!clicked) return;
+      pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
+      raycaster.setFromCamera(pointerNdc, camera);
+      const person = people.pick(raycaster);
+      if (person) {
+        people.select(person);
+        hud.selectPerson(person);
+        hud.togglePeoplePanel();
+      }
+      return;
+    }
     pointerNdc.set(x / surfaceWidth * 2 - 1, 1 - y / surfaceHeight * 2);
     raycaster.setFromCamera(pointerNdc, camera);
     if (raycaster.ray.intersectPlane(floor, hit)) {

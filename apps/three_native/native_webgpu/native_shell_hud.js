@@ -100,7 +100,8 @@ export function createNativeText(THREE, manifest, readAsset) {
 }
 
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
-  onBack, onPeople, onOpen, stage, makeText = createNativeText(THREE, manifest, readAsset) }) {
+  onBack, onPeople, onOpen, onSelectPerson, onFindPerson, onPausePeople,
+  stage, makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
   camera.add(root);
   scene.add(camera);
@@ -119,6 +120,19 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   const panelWidth = 316;
   const rowHeight = 31;
   let panelHeight = 60 + rowHeight + 12;
+  let view = 'home';
+  let peopleOpen = false;
+  let peopleRows = [];
+  let peopleSample = true;
+  let peoplePaused = false;
+  let peopleSelected = null;
+  let peoplePage = 0;
+  let peoplePageSize = 11;
+  let peopleTop = 70;
+  let peopleHeight = 0;
+  const peopleWidth = 360;
+  const peopleRowHeight = 34;
+  const peopleLabels = [];
 
   function plane(w, h, material, order = 1000) {
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
@@ -189,6 +203,59 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   let header = label('APPS', 0, 0, 15);
   let pageMark = label('1/1', 0, 0, 11);
   panel.visible = header.visible = pageMark.visible = false;
+  const peoplePanel = plane(peopleWidth, 100, solid(0xf8f5f2, .97), 1001);
+  const peopleSelection = plane(peopleWidth - 24, 31, solid(0xdde4ec, .92), 1005);
+  const pausePlate = plane(176, 29, solid(0xe6e9e5, .94), 1005);
+  const findPlate = plane(142, 29, solid(0xe6e9e5, .94), 1005);
+  peoplePanel.visible = peopleSelection.visible = false;
+  pausePlate.visible = findPlate.visible = false;
+
+  function redrawPeople() {
+    while (peopleLabels.length) removeLabel(peopleLabels.pop());
+    peoplePageSize = Math.max(3, Math.min(11,
+      Math.floor((height - 260) / peopleRowHeight)));
+    const pages = Math.max(1, Math.ceil(peopleRows.length / peoplePageSize));
+    peoplePage = Math.min(peoplePage, pages - 1);
+    const shown = peopleRows.slice(peoplePage * peoplePageSize,
+      (peoplePage + 1) * peoplePageSize);
+    peopleHeight = 80 + Math.max(1, shown.length) * peopleRowHeight + 100;
+    peopleTop = Math.max(54, Math.min(86, height - peopleHeight - 20));
+    const left = Math.max(10, width - peopleWidth - 22);
+    peoplePanel.scale.y = peopleHeight * units;
+    place(peoplePanel, left + peopleWidth / 2, peopleTop + peopleHeight / 2);
+    const add = (value, x, y, size = 14, color = [50, 49, 54]) => {
+      const item = label(value, x, y, size, color);
+      item.visible = peopleOpen;
+      peopleLabels.push(item);
+    };
+    add('PEOPLE', left + 20, peopleTop + 30, 24);
+    add(peopleSample ? 'SAMPLE' : 'LIVE', left + peopleWidth - 96,
+      peopleTop + 30, 13, peopleSample ? [122, 93, 70] : [52, 119, 90]);
+    add(peopleSample ? 'Simulated presence' : 'Present now',
+      left + 20, peopleTop + 56, 14, [99, 98, 96]);
+    for (let index = 0; index < shown.length; ++index) {
+      const row = shown[index];
+      add(row.name || row.id, left + 24,
+        peopleTop + 84 + index * peopleRowHeight, 19);
+      add('HERE', left + peopleWidth - 68,
+        peopleTop + 84 + index * peopleRowHeight, 12, [73, 99, 73]);
+    }
+    const selected = shown.findIndex(row => row.id === peopleSelected);
+    peopleSelection.visible = peopleOpen && selected >= 0;
+    if (selected >= 0)
+      place(peopleSelection, left + peopleWidth / 2,
+        peopleTop + 84 + selected * peopleRowHeight);
+    const footer = peopleTop + peopleHeight - 68;
+    place(pausePlate, left + 108, footer);
+    place(findPlate, left + 91, footer + 34);
+    add(peoplePaused ? 'RESUME WANDERING' : 'PAUSE WANDERING',
+      left + 30, footer, 14);
+    add('FIND ON GRID', left + 30, footer + 34, 14);
+    if (pages > 1) add(`${peoplePage + 1}/${pages}  NEXT`,
+      left + peopleWidth - 109, footer + 34, 13);
+    peoplePanel.visible = peopleOpen;
+    pausePlate.visible = findPlate.visible = peopleOpen;
+  }
 
   function redrawRows() {
     while (rows.length) removeLabel(rows.pop());
@@ -244,6 +311,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     if (launcher) place(launcher, width - 46, height - 46);
     if (clock) place(clock, width / 2, 37);
     redrawRows();
+    redrawPeople();
   }
   function setApps(next) {
     apps = next.filter(app => typeof app.key === 'string' && !app.hidden)
@@ -284,6 +352,42 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     if (x >= 18 && x <= 74 && y >= height - 74 && y <= height - 18) {
       if (open) show(false);
       onPeople?.();
+      return true;
+    }
+    if (peopleOpen) {
+      const left = Math.max(10, width - peopleWidth - 22);
+      if (x < left || x > left + peopleWidth ||
+          y < peopleTop || y > peopleTop + peopleHeight) {
+        peopleOpen = false;
+        redrawPeople();
+        return true;
+      }
+      const index = Math.floor((y - peopleTop - 67) / peopleRowHeight);
+      if (index >= 0 && index < peoplePageSize &&
+          y < peopleTop + 67 + (index + 1) * peopleRowHeight) {
+        const person = peopleRows[peoplePage * peoplePageSize + index];
+        if (person) {
+          peopleSelected = person.id;
+          redrawPeople();
+          onSelectPerson?.(person.id);
+        }
+        return true;
+      }
+      const footer = peopleTop + peopleHeight - 68;
+      if (y >= footer - 16 && y < footer + 16) {
+        peoplePaused = !peoplePaused;
+        onPausePeople?.(peoplePaused);
+        redrawPeople();
+      } else if (y >= footer + 18 && y < footer + 50) {
+        if (x > left + peopleWidth - 115 && peopleRows.length > peoplePageSize) {
+          peoplePage = (peoplePage + 1) % Math.ceil(peopleRows.length / peoplePageSize);
+          redrawPeople();
+        } else if (peopleSelected) {
+          onFindPerson?.(peopleSelected);
+          peopleOpen = false;
+          redrawPeople();
+        }
+      }
       return true;
     }
     if (x >= width - 72 && x <= width - 18 && y >= height - 72 && y <= height - 18) {
@@ -343,9 +447,32 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     return true;
   }
   return { resize, setApps, tick, pointer, key, close: () => show(false),
-    setView(view, sample = true) {
+    setPeopleRows(rows, sample = true) {
+      peopleRows = rows;
+      peopleSample = sample;
+      if (peopleSelected && !rows.some(row => row.id === peopleSelected))
+        peopleSelected = null;
+      redrawPeople();
+    },
+    selectPerson(id) {
+      peopleSelected = peopleRows.some(row => row.id === id) ? id : null;
+      redrawPeople();
+    },
+    togglePeoplePanel() {
+      if (view !== 'people') return;
+      peopleOpen = !peopleOpen;
+      redrawPeople();
+      stage(peopleOpen ? 'WorldOS native People panel opened' :
+        'WorldOS native People panel closed');
+    },
+    closePeoplePanel() { peopleOpen = false; redrawPeople(); },
+    setView(nextView, sample = true) {
+      view = nextView;
+      if (view !== 'people') peopleOpen = false;
+      peopleSample = sample;
       peoplePlate.material.opacity = view === 'people' ? .8 : .38;
       peopleMark.visible = view === 'people' && sample;
+      redrawPeople();
     },
     isOpen: () => open,
     openAt(x, z) {

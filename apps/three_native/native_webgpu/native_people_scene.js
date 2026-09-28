@@ -82,7 +82,7 @@ function shareSkeletonPalettes(root) {
 }
 
 export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
-  makeText, loadModel, stage }) {
+  makeText, loadModel, stage, onFocus }) {
   const root = new THREE.Group();
   root.name = 'WorldOS People';
   root.visible = false;
@@ -182,6 +182,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
   let open = false;
   let source = 'sample';
   let currentRows = SAMPLE_PEOPLE;
+  let selectedId = null;
   let visualQueue = Promise.resolve();
   const desired = new Map();
   const present = new Map();
@@ -201,6 +202,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     disposeLabel(actor.label);
     actor.label = makeLabel(name, actor.group.position.x, .045,
       actor.group.position.z + .31);
+    actor.label.children[0].material.opacity = id === selectedId ? .94 : .66;
     actor.label.visible = actor.group.visible;
     root.add(actor.label);
     actor.name = name;
@@ -242,6 +244,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
       group.visible = actor.label.visible = false;
       root.add(group, actor.label);
       actors.set(id, actor);
+      actor.label.children[0].material.opacity = id === selectedId ? .94 : .66;
       stage(`WorldOS People model loaded: ${name} (${asset})`);
       if (globalThis.__nativePeopleDiagnostics)
         stage(`WorldOS People skeleton palettes shared: ${name} ${palettesShared}`);
@@ -292,6 +295,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
           !Number.isFinite(row.x) || !Number.isFinite(row.z)) continue;
       desired.set(row.id, row);
     }
+    if (selectedId && !desired.has(selectedId)) select(null);
     if (!open) return;
     for (const [id, row] of desired) {
       const leaving = departures.get(id);
@@ -318,6 +322,31 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     }
   }
   function useSample() { setPeople(SAMPLE_PEOPLE, { sample: true }); }
+  function select(id) {
+    selectedId = id && desired.has(id) ? id : null;
+    for (const [key, actor] of actors)
+      actor.label.children[0].material.opacity = key === selectedId ? .94 : .66;
+    return selectedId;
+  }
+  function focus(id) {
+    const row = desired.get(id);
+    if (!row) return false;
+    select(id);
+    const state = world.snapshot().find(item => item.id === id);
+    onFocus?.(state?.x ?? row.x, state?.z ?? row.z);
+    stage(`WorldOS People focused: ${row.name || id}`);
+    return true;
+  }
+  function pick(raycaster) {
+    let nearest = null;
+    for (const [id, actor] of actors) {
+      if (!actor.group.visible) continue;
+      const hits = raycaster.intersectObjects([actor.group, actor.label], true);
+      if (hits.length && (!nearest || hits[0].distance < nearest.distance))
+        nearest = { id, distance: hits[0].distance };
+    }
+    return nearest?.id ?? null;
+  }
   function enter() {
     if (open) return;
     open = root.visible = true;
@@ -339,5 +368,8 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
         `${states.filter(row => row.phase === 'online').length} online`);
     }
   }
-  return { root, enter, leave, isOpen: () => open, setPeople, useSample, faceCamera, tick };
+  return { root, enter, leave, isOpen: () => open, setPeople, useSample,
+    rows: () => [...desired.values()], source: () => source, select, focus, pick,
+    setPaused: value => world.setPaused(value), isPaused: () => world.isPaused(),
+    faceCamera, tick };
 }
