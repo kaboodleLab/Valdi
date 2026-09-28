@@ -281,6 +281,27 @@ XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-0 SDL_VIDEODRIVER=wayland
 On the Linux demo host, tty2 runs SPAOS with this renderer as its fullscreen
 World client. Its clean WorldOS volume, app catalog, live window previews,
 Back, and launcher are visible; SPAOS still owns compositing and app windows.
+With the lifecycle-capable native host, the World client reports readiness to
+SPAOS after its first GPU frame. Ctrl+F5 requests a World-only restart through
+the inherited SPAOS channel; on `lifecycle_quit`, the host releases its WebGPU
+surface and exits so the compositor can replace only World. The request checks
+the compositor's current session and World readiness before submitting. It does
+not require the optional external-agent lifecycle socket or token. The currently
+running tty2 host predates this change; the staged binary takes effect on its
+next launch.
+The Linux lifecycle regression runs the compiled host on an isolated Wayland
+display with a private socket pair. It checks `hello`, readiness after a GPU
+frame, status and restart requests, `lifecycle_quit`, and a clean exit:
+
+```sh
+XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-2 \
+  python3 apps/three_native/native_webgpu/test_native_world_lifecycle.py \
+  bazel-bin/apps/three_native/three_native_linux_webgpu_surface_probe \
+  /path/to/native-world-runtime/world.js /path/to/native-world-runtime/assets
+```
+
+That probe passed on the Linux test GPU. A compositor-managed replacement in
+the live tty2 session still needs the next launch of its staged native host.
 An isolated headless SPAOS session validated a freshly built bundle through
 tile entry, Back, an updated preview, and release of the departing window.
 The live tty2 session remains running while new bundles are checked in isolated

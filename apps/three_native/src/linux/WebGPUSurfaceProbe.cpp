@@ -43,6 +43,7 @@ struct ProbeResult {
     bool finished = false;
     bool presented = false;
     bool quitRequested = false;
+    bool lifecycleReadySent = false;
     std::string message;
 };
 
@@ -205,6 +206,17 @@ int worldCoordinate(facebook::jsi::Runtime& js, const facebook::jsi::Value& valu
     return static_cast<int>(number);
 }
 
+std::string lifecycleIdentifier(facebook::jsi::Runtime& js,
+                                const facebook::jsi::Value& value) {
+    if (!value.isString()) throw facebook::jsi::JSError(js, "Expected SPAOS lifecycle identity");
+    const auto id = value.getString(js).utf8(js);
+    if (id.empty() || id.size() > 128 ||
+        !std::all_of(id.begin(), id.end(), [](unsigned char c) {
+            return std::isalnum(c) || c == '-' || c == '_' || c == '.';
+        })) throw facebook::jsi::JSError(js, "Invalid SPAOS lifecycle identity");
+    return id;
+}
+
 std::string assetPath(facebook::jsi::Runtime& js,
                       const facebook::jsi::Value* args, size_t count,
                       const std::string& root) {
@@ -331,7 +343,7 @@ int main(int argc, char** argv) {
 
         auto done = facebook::jsi::Function::createFromHostFunction(
             *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__webgpuSurfaceDone"), 2,
-            [result](facebook::jsi::Runtime& js,
+            [result, worldChannel](facebook::jsi::Runtime& js,
                      const facebook::jsi::Value&,
                      const facebook::jsi::Value* args,
                      size_t count) -> facebook::jsi::Value {
@@ -339,11 +351,23 @@ int main(int argc, char** argv) {
                 result->presented = count > 0 && args[0].isBool() && args[0].getBool();
                 if (count > 1 && args[1].isString()) result->message = args[1].getString(js).utf8(js);
                 result->finished = true;
+                if (result->presented && worldChannel && !result->lifecycleReadySent)
+                    result->lifecycleReadySent = worldChannel->sendLine(
+                        "{\"type\":\"lifecycle_ready\"}");
                 return facebook::jsi::Value::undefined();
             });
         jsi->global().setProperty(*jsi, "__webgpuSurfaceDone", std::move(done));
         if (!script.empty()) {
             jsi->global().setProperty(*jsi, "__nativeFrameLimit", frameLimit);
+            auto requestQuit = facebook::jsi::Function::createFromHostFunction(
+                *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeRequestQuit"), 0,
+                [result](facebook::jsi::Runtime&, const facebook::jsi::Value&,
+                         const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                    std::lock_guard<std::mutex> lock(result->mutex);
+                    result->quitRequested = true;
+                    return facebook::jsi::Value::undefined();
+                });
+            jsi->global().setProperty(*jsi, "__nativeRequestQuit", std::move(requestQuit));
             if (worldChannel) {
                 auto pollWorld = facebook::jsi::Function::createFromHostFunction(
                     *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldPoll"), 0,
@@ -352,6 +376,32 @@ int main(int argc, char** argv) {
                         return facebook::jsi::String::createFromUtf8(js, worldChannel->poll());
                     });
                 jsi->global().setProperty(*jsi, "__nativeWorldPoll", std::move(pollWorld));
+                auto lifecycleStatus = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldLifecycleStatus"), 1,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 1) throw facebook::jsi::JSError(js, "Expected lifecycle request id");
+                        const auto id = lifecycleIdentifier(js, args[0]);
+                        return facebook::jsi::Value(worldChannel->sendLine(
+                            "{\"type\":\"lifecycle\",\"id\":\"" + id +
+                            "\",\"request\":{\"op\":\"status\"}}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldLifecycleStatus", std::move(lifecycleStatus));
+                auto lifecycleRestart = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldLifecycleRestart"), 3,
+                    [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                                   const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                        if (count != 3) throw facebook::jsi::JSError(js, "Expected lifecycle id, session and request id");
+                        const auto id = lifecycleIdentifier(js, args[0]);
+                        const auto session = lifecycleIdentifier(js, args[1]);
+                        const auto requestId = lifecycleIdentifier(js, args[2]);
+                        return facebook::jsi::Value(worldChannel->sendLine(
+                            "{\"type\":\"lifecycle\",\"id\":\"" + id +
+                            "\",\"request\":{\"op\":\"submit\",\"session\":\"" + session +
+                            "\",\"request_id\":\"" + requestId +
+                            "\",\"target\":\"world\",\"action\":\"restart\"}}"));
+                    });
+                jsi->global().setProperty(*jsi, "__nativeWorldLifecycleRestart", std::move(lifecycleRestart));
                 auto enterWorld = facebook::jsi::Function::createFromHostFunction(
                     *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeWorldEnter"), 2,
                     [worldChannel](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
@@ -430,15 +480,6 @@ int main(int argc, char** argv) {
                         return facebook::jsi::Value(shellChannel->isOpen());
                     });
                 jsi->global().setProperty(*jsi, "__nativeShellConnected", std::move(shellConnected));
-                auto requestQuit = facebook::jsi::Function::createFromHostFunction(
-                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeRequestQuit"), 0,
-                    [result](facebook::jsi::Runtime&, const facebook::jsi::Value&,
-                             const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
-                        std::lock_guard<std::mutex> lock(result->mutex);
-                        result->quitRequested = true;
-                        return facebook::jsi::Value::undefined();
-                    });
-                jsi->global().setProperty(*jsi, "__nativeRequestQuit", std::move(requestQuit));
             }
             if (const char* statePath = std::getenv("WORLD_OS_NATIVE_STATE")) {
                 const std::string path(statePath);
@@ -648,6 +689,9 @@ int main(int argc, char** argv) {
                         case SDLK_HOME: navigation = "recenter"; break;
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER: navigation = "enter"; break;
+                        case SDLK_F5:
+                            if (event.key.mod & SDL_KMOD_CTRL) navigation = "restart";
+                            break;
                         default: break;
                     }
                 }

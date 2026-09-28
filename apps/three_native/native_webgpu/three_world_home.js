@@ -6,6 +6,7 @@ import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativePeopleScene } from './native_people_scene.js';
 import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
+import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
 
 function nativeIconLoader(name, manifest) {
   const loader = new GLTFLoader();
@@ -392,6 +393,8 @@ async function render() {
       if (!line) continue;
       let message;
       try { message = JSON.parse(line); } catch { continue; }
+      if (!message || typeof message !== 'object') continue;
+      if (lifecycle.onMessage(message)) continue;
       if (message.type === 'apps' && Array.isArray(message.apps)) {
         const signature = JSON.stringify(message.apps.map(app => [
           app.key, app.name, app.hidden, app.world, app.icon,
@@ -706,6 +709,18 @@ async function render() {
   const floor = new THREE.Plane(new THREE.Vector3(0, 1, 0), .002);
   let frame = 0;
   let stopped = false;
+  const lifecycle = createNativeWorldLifecycle({
+    sendStatus: typeof __nativeWorldLifecycleStatus === 'function' ?
+      id => __nativeWorldLifecycleStatus(id) : null,
+    sendRestart: typeof __nativeWorldLifecycleRestart === 'function' ?
+      (id, session, requestId) => __nativeWorldLifecycleRestart(id, session, requestId) : null,
+    requestQuit: () => {
+      stopped = true;
+      if (typeof __nativeRequestQuit === 'function') __nativeRequestQuit();
+    },
+    stage: message => __webgpuSurfaceStage(message),
+  });
+  globalThis.__worldRestart = () => lifecycle.restart();
   // A bundle prefix can select the previous post-draw timer for comparison.
   // Otherwise pace start-to-start so rendering time does not add to the wait.
   const framePacing = globalThis.__worldFramePacing === 'legacy' ? 'legacy' : 'deadline';
@@ -773,6 +788,7 @@ async function render() {
     __webgpuSurfaceStage(`WorldOS surface resized: ${width}x${height}`);
   };
   globalThis.__worldNavigate = (kind, amount = 1) => {
+    if (kind === 'restart') { lifecycle.restart(); return; }
     if (hud.key(kind === 'recenter' ? 'home' : kind)) return;
     if (people.isOpen()) {
       if (kind === 'recenter') setPeopleOpen(false);
