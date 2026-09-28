@@ -26,6 +26,7 @@ export WORLD_OS_NATIVE_PREVIEWS="$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.previews"
 if [[ ${SPAOS_AGENT_SERVICE:-0} != 1 || -z ${SPAOS_WORLD_OS_ROOT:-} ]]; then
   exec "$world_binary" --interactive "$VALDI_WORLD_BUNDLE"
 fi
+export WORLD_OS_NATIVE_ROSTER=$(mktemp "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.native-roster.XXXXXXXX")
 node "$script_dir/native_people_roster_bridge.mjs" &
 roster_pid=$!
 "$world_binary" --interactive "$VALDI_WORLD_BUNDLE" &
@@ -35,4 +36,5 @@ status=0
 wait "$world_pid" || status=$?
 kill -TERM "$roster_pid" 2>/dev/null || true
 wait "$roster_pid" 2>/dev/null || true
+rm -f "$WORLD_OS_NATIVE_ROSTER"
 exit "$status"

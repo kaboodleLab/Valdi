@@ -49,13 +49,13 @@ struct ProbeResult {
 
 class FileBuffer final : public facebook::jsi::MutableBuffer {
 public:
-    explicit FileBuffer(const std::string& path) {
+    explicit FileBuffer(const std::string& path, size_t maxBytes = 64 * 1024 * 1024) {
         std::ifstream file(path, std::ios::binary | std::ios::ate);
         if (!file) throw std::runtime_error("Cannot open native asset: " + path);
         const auto length = file.tellg();
         // The authored Dinner icon GLB is about 53 MiB. Keep a bounded read
         // while allowing the complete WorldOS icon catalog to load lazily.
-        if (length < 0 || length > 64 * 1024 * 1024)
+        if (length < 0 || length > static_cast<std::streamoff>(maxBytes))
             throw std::runtime_error("Invalid native asset size: " + path);
         bytes_.resize(static_cast<size_t>(length));
         file.seekg(0);
@@ -494,6 +494,21 @@ int main(int argc, char** argv) {
                         }
                     });
                 jsi->global().setProperty(*jsi, "__nativeReadShellState", std::move(readState));
+            }
+            if (const char* rosterPath = std::getenv("WORLD_OS_NATIVE_ROSTER")) {
+                const std::string path(rosterPath);
+                auto readRoster = facebook::jsi::Function::createFromHostFunction(
+                    *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeReadPeopleRoster"), 0,
+                    [path](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                           const facebook::jsi::Value*, size_t) -> facebook::jsi::Value {
+                        try {
+                            return facebook::jsi::String::createFromUtf8(js,
+                                FileBuffer(path, 2 * 1024 * 1024).text());
+                        } catch (const std::exception& error) {
+                            throw facebook::jsi::JSError(js, error.what());
+                        }
+                    });
+                jsi->global().setProperty(*jsi, "__nativeReadPeopleRoster", std::move(readRoster));
             }
             if (const char* floorPath = std::getenv("WORLD_OS_NATIVE_FLOOR")) {
                 const std::string path(floorPath);

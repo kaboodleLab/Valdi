@@ -3,21 +3,22 @@
 // private, read-only projection of the roster, never an attachment credential.
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 import { rename, unlink, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 
-const assets = process.env.WORLD_OS_NATIVE_ASSETS;
+const output = process.env.WORLD_OS_NATIVE_ROSTER;
+const runtime = process.env.XDG_RUNTIME_DIR;
 const stateFile = process.env.WORLD_OS_NATIVE_STATE;
 const worldRoot = process.env.SPAOS_WORLD_OS_ROOT;
-if (!assets || !stateFile || !worldRoot || !stateFile.endsWith('/State/world.json'))
-  throw new Error('Native People roster needs assets, State/world.json and SPAOS_WORLD_OS_ROOT');
+if (!output || !runtime || !resolve(output).startsWith(resolve(runtime) + sep) ||
+    !stateFile || !worldRoot || !stateFile.endsWith('/State/world.json'))
+  throw new Error('Native People roster needs a private runtime path, State/world.json and SPAOS_WORLD_OS_ROOT');
 const home = join(dirname(dirname(stateFile)), 'Home');
 const state = dirname(stateFile);
 const clientModule = resolve(worldRoot, '../../agent/world/services/world-service-client.mjs');
 const { startWorldFrontend } = await import(pathToFileURL(clientModule).href);
 const WebSocket = createRequire(clientModule)('ws');
-const output = join(assets, 'live-roster.json');
 let frontend, socket, snapshot = null, receivedAt = 0, connected = false;
 let closing = false, retry, heartbeat;
 let writes = Promise.resolve();

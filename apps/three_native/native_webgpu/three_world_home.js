@@ -304,7 +304,7 @@ async function render() {
   function pollPeopleRoster() {
     let rows = null;
     try {
-      const value = JSON.parse(__nativeReadTextAsset('live-roster.json'));
+      const value = JSON.parse(__nativeReadPeopleRoster());
       if (Number.isFinite(value.receivedAt) && Date.now() - value.receivedAt < 12000)
         rows = projectPeopleRoster(value.snapshot);
     } catch {}

@@ -93,8 +93,11 @@ When `SPAOS_WORLD_OS_ROOT` points to the WorldOS tree of the running SPAOS
 agent service and `SPAOS_AGENT_SERVICE=1`, `run_spaos_world.sh` starts a
 companion process with the native host. It authenticates through SPAOS's
 existing World frontend transport, subscribes to `/ws/roster`, and writes a
-private `live-roster.json` in the prepared asset directory. The renderer reads
-that snapshot and shows live members when the provider is online. A provider
+private, per-World snapshot under `XDG_RUNTIME_DIR`. The wrapper gives the
+companion and native host the same `WORLD_OS_NATIVE_ROSTER` path. The host
+exposes only a bounded read of that file to Hermes; prepared assets stay
+read-only and separate sessions cannot overwrite each other's roster. The
+renderer shows live members when the provider is online. A provider
 that is off uses the marked sample. The attachment credential never enters
 Hermes or the snapshot file. The companion exits with the native World.
 Embedded images are decoded ahead of time into RGBA files because Hermes has no browser
@@ -302,6 +305,22 @@ XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-2 \
 
 That probe passed on the Linux test GPU. A compositor-managed replacement in
 the live tty2 session still needs the next launch of its staged native host.
+The end-to-end acceptance test starts a separate SPAOS compositor under an
+isolated Wayland display. Its first World calls `__worldRestart()` from Hermes;
+the test checks that SPAOS replaces the World process, maps the replacement,
+and reports it ready. The test terminates only the compositor it starts:
+
+```sh
+XDG_RUNTIME_DIR=/run/user/1000 WAYLAND_DISPLAY=wayland-2 \
+  python3 apps/three_native/native_webgpu/test_native_spaos_lifecycle.py \
+  /path/to/spaos-compositor \
+  bazel-bin/apps/three_native/three_native_linux_webgpu_surface_probe \
+  /path/to/native-world-runtime/world.js /path/to/native-world-runtime/assets \
+  --state /path/to/WorldOS/State/world.json
+```
+
+This passed on the Linux test host: the first native World requested its own
+restart and SPAOS marked the replacement `succeeded` after it mapped.
 An isolated headless SPAOS session validated a freshly built bundle through
 tile entry, Back, an updated preview, and release of the departing window.
 The live tty2 session remains running while new bundles are checked in isolated
