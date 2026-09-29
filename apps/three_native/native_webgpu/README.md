@@ -208,6 +208,10 @@ that scene factory has not landed in SPAOS main. The builder imports WorldOS
 outside `WORLD_SCENE_ROOT`, set `WORLD_JAR_MATERIALS_SOURCE` and
 `WORLD_HOME_MATERIAL_SOURCE` to their paths. The builder also imports
 `world-daylight.js`; set `WORLD_DAYLIGHT_SOURCE` when it is staged separately.
+The native launcher also consumes WorldOS's pure `spatial-launcher-motion.js`
+at bundle time; set `WORLD_SPATIAL_LAUNCHER_MOTION_SOURCE` when that leaf is
+staged separately. The native HUD uses its tile spring and pose while SPAOS
+continues to own the app catalog and launch request.
 The builder also imports `world-hole-bell.js`; set `WORLD_HOLE_BELL_SOURCE`
 when that leaf is staged separately.
 It imports `world-home-hole-appearance.js` as well; set
@@ -236,6 +240,9 @@ closes the window. `THREE_NATIVE_LINUX_CAPTURE=/tmp/world-home.ppm` captures the
 first swapchain frame by GPU readback for visual inspection. The host follows
 Wayland pixel-size changes, including SPAOS fullscreen, and updates the Three
 camera and WebGPU drawing buffer.
+When a SPAOS launcher wrapper starts this host, verify the running World
+process names the newly built `world.js`: an inner wrapper can override
+`VALDI_WORLD_BUNDLE` even when the outer tty command points to the new bundle.
 For an isolated People capture, prefix the bundle with
 `globalThis.__nativeWorldStartView='people'; globalThis.__worldCaptureFrame=180;`
 and run for at least 181 frames. The first rendered frame is also captured, so

@@ -3,6 +3,8 @@
 // small camera-fixed layer draws text into RGBA textures and uses the real
 // WorldOS control artwork prepared alongside the GLBs.
 import { WORLD_THEMES, worldTheme } from './native_world_themes.mjs';
+import { createFlight, tilePose, TILE_SIDE, SPATIAL_TURN }
+  from '@worldos/spatial-launcher-motion';
 const GLYPHS = {
   ' ': [0, 0, 0, 0, 0, 0, 0],
   '-': [0, 0, 0, 31, 0, 0, 0],
@@ -147,11 +149,17 @@ export function createNativeText(THREE, manifest, readAsset) {
 
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
   onBack, onPeople, onBook, onOpen, onSelectPerson, onFindPerson, onPausePeople,
-  allowHomePeoplePanel = false, iconForApp, initialTheme = 'classic', onTheme, stage,
+  allowHomePeoplePanel = false, iconForApp, initialTheme = 'classic', onTheme,
+  onLauncherVisible, stage,
   makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
   camera.add(root);
   scene.add(camera);
+  const launcherGroup = new THREE.Group();
+  launcherGroup.visible = false;
+  root.add(launcherGroup);
+  const launcherFlight = createFlight();
+  let pendingLaunch = null;
   const rows = [];
   const appCards = [];
   const appIcons = [];
@@ -213,6 +221,26 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     root.add(mesh);
     return mesh;
   }
+  function roundedTile(w, h, color, opacity, order) {
+    const r = .035;
+    const shape = new THREE.Shape();
+    shape.moveTo(-.5 + r, -.5);
+    shape.lineTo(.5 - r, -.5);
+    shape.quadraticCurveTo(.5, -.5, .5, -.5 + r);
+    shape.lineTo(.5, .5 - r);
+    shape.quadraticCurveTo(.5, .5, .5 - r, .5);
+    shape.lineTo(-.5 + r, .5);
+    shape.quadraticCurveTo(-.5, .5, -.5, .5 - r);
+    shape.lineTo(-.5, -.5 + r);
+    shape.quadraticCurveTo(-.5, -.5, -.5 + r, -.5);
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape),
+      solid(color, opacity));
+    mesh.scale.set(w * units, h * units, 1);
+    mesh.renderOrder = order;
+    mesh.userData.previousUnits = units;
+    root.add(mesh);
+    return mesh;
+  }
   function place(mesh, x, y) {
     mesh.position.set((x - width / 2) * units, (height / 2 - y) * units, -1);
   }
@@ -246,7 +274,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   }
   function removeLabel(mesh) {
     if (!mesh) return;
-    root.remove(mesh);
+    mesh.parent?.remove(mesh);
     mesh.userData.texture?.dispose();
     mesh.material.dispose();
     mesh.geometry.dispose();
@@ -264,12 +292,19 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   const bookText = label('Book', 0, 0, 12, [50, 49, 54], 'center');
   const peopleMark = label('Sample people', 0, 0, 10, [86, 84, 82], 'center');
   peopleMark.visible = false;
-  const panel = plane(panelWidth, panelHeight, solid(0xf8f5f2, .97), 1001);
+  const tileShadow = roundedTile(panelWidth + 34, panelHeight + 34,
+    0x151714, .38, 998);
+  const tileBody = roundedTile(panelWidth, panelHeight,
+    0xb3ada3, .98, 999);
+  launcherGroup.add(tileShadow, tileBody);
+  const panel = roundedTile(panelWidth, panelHeight, 0xf8f5f2, .98, 1001);
   const selectionPlate = plane(1, cardHeight,
     solid(0xdce6f0, .97), 1006);
+  launcherGroup.add(panel, selectionPlate);
   let header = label('Apps', 0, 0, 24);
   let searchMark = label('Search apps', 0, 0, 15, [103, 101, 99]);
   let pageMark = label('1/1', 0, 0, 14);
+  launcherGroup.add(header, searchMark, pageMark);
   panel.visible = header.visible = pageMark.visible = false;
   searchMark.visible = false;
   const peoplePanel = plane(peopleWidth, 100, solid(0xf8f5f2, .97), 1001);
@@ -380,7 +415,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     while (appCards.length) removeLabel(appCards.pop());
     while (appIcons.length) {
       const icon = appIcons.pop();
-      root.remove(icon);
+      icon.parent?.remove(icon);
       icon.traverse(object => {
         if (object.isMesh) {
           const materials = Array.isArray(object.material) ? object.material : [object.material];
@@ -391,6 +426,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     removeLabel(header);
     removeLabel(searchMark);
     removeLabel(pageMark);
+    const displayed = open || launcherGroup.visible;
     columns = width < 620 ? 2 : width < 900 ? 3 : 5;
     pageRows = height < 850 ? 2 : 3;
     pageSize = columns * pageRows;
@@ -406,15 +442,24 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     cardWidth = (panelWidth - 56 - (columns - 1) * gap) / columns;
     const pitchX = cardWidth + gap;
     panel.scale.set(panelWidth * units, panelHeight * units, 1);
+    tileShadow.scale.set((panelWidth + 34) * units,
+      (panelHeight + 34) * units, 1);
+    tileBody.scale.set(panelWidth * units, panelHeight * units, 1);
     selectionPlate.scale.set((cardWidth + 2) * units, (cardHeight + 2) * units, 1);
     place(panel, width / 2, panelTop + panelHeight / 2);
+    place(tileShadow, width / 2 + 13, panelTop + panelHeight / 2 + 32);
+    tileShadow.position.z = -1.13;
+    place(tileBody, width / 2, panelTop + panelHeight / 2 + 15);
+    tileBody.position.z = -1.075;
     header = label('Apps', panelLeft + 28, panelTop + 34, 27);
     searchMark = label(query ? `Search: ${query}` : 'Search apps…',
       panelLeft + 28, panelTop + 72, 16, [103, 101, 99]);
-    header.visible = searchMark.visible = open;
+    launcherGroup.add(header, searchMark);
+    header.visible = searchMark.visible = displayed;
     pageMark = label(`${page + 1} / ${count}    Prev  ·  Next`,
       panelLeft + panelWidth - 180, panelTop + panelHeight - 22, 14);
-    pageMark.visible = open && count > 1;
+    launcherGroup.add(pageMark);
+    pageMark.visible = displayed && count > 1;
     for (let index = 0; index < pageSize; ++index) {
       const app = apps[page * pageSize + index];
       if (!app) break;
@@ -424,9 +469,10 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       const centerY = panelTop + 108 + cardHeight / 2 + row * cardPitchY;
       const card = plane(cardWidth, cardHeight, solid(0xffffff, .79), 1004);
       place(card, centerX, centerY);
-      card.visible = open;
+      launcherGroup.add(card);
+      card.visible = displayed;
       appCards.push(card);
-      const icon = open ? iconForApp?.(app) : null;
+      const icon = displayed ? iconForApp?.(app) : null;
       if (icon) {
         icon.rotation.y = -.32;
         const bounds = new THREE.Box3().setFromObject(icon);
@@ -450,30 +496,33 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
           object.material = Array.isArray(object.material) ?
             object.material.map(convert) : convert(object.material);
         });
-        root.add(icon);
-        icon.visible = open;
+        launcherGroup.add(icon);
+        icon.visible = displayed;
         appIcons.push(icon);
       } else {
         const initials = appName(app).split(/\s+/).map(word => word[0] || '').join('').slice(0, 2);
         const badge = label(initials || '?', centerX,
           centerY - 11, 30, [103, 103, 110], 'center');
-        badge.visible = open;
+        launcherGroup.add(badge);
+        badge.visible = displayed;
         rows.push(badge);
       }
       const item = label(appName(app), centerX, centerY + 35, 17,
         [50, 49, 54], 'center');
       item.scale.x = Math.min(item.scale.x, (cardWidth - 12) * units);
-      item.visible = open;
+      launcherGroup.add(item);
+      item.visible = displayed;
       rows.push(item);
     }
     if (query && !apps.length) {
       const empty = label('No matching apps', width / 2,
         panelTop + panelHeight / 2, 20, [98, 97, 96], 'center');
-      empty.visible = open;
+      launcherGroup.add(empty);
+      empty.visible = displayed;
       rows.push(empty);
     }
     const selectedRow = selectedApp - page * pageSize;
-    selectionPlate.visible = open && apps.length > 0 &&
+    selectionPlate.visible = displayed && apps.length > 0 &&
       selectedRow >= 0 && selectedRow < pageSize;
     if (selectionPlate.visible) {
       const column = selectedRow % columns;
@@ -486,13 +535,14 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     width = nextWidth;
     height = nextHeight;
     units = 2 * extent / height;
-    for (const mesh of root.children) {
-      mesh.scale.x /= mesh.userData.previousUnits || 1;
-      mesh.scale.y /= mesh.userData.previousUnits || 1;
+    root.traverse(mesh => {
+      if (!mesh.isMesh || !mesh.userData.previousUnits) return;
+      mesh.scale.x /= mesh.userData.previousUnits;
+      mesh.scale.y /= mesh.userData.previousUnits;
       mesh.scale.x *= units;
       mesh.scale.y *= units;
       mesh.userData.previousUnits = units;
-    }
+    });
     place(backPlate, 41, 39);
     place(peoplePlate, 46, height - 46);
     place(peopleText, 46, height - 46);
@@ -538,19 +588,58 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   function show(next) {
     if (next === open) return;
     open = next;
-    if (!open) selectedTile = null;
-    query = '';
-    apps = allApps;
-    page = selectedApp = 0;
-    redrawRows();
-    panel.visible = header.visible = searchMark.visible = open;
-    pageMark.visible = open && apps.length > pageSize;
-    selectionPlate.visible = open && apps.length > 0;
-    for (const row of rows) row.visible = open;
-    for (const card of appCards) card.visible = open;
-    for (const icon of appIcons) icon.visible = open;
+    if (open) {
+      pendingLaunch = null;
+      query = '';
+      apps = allApps;
+      page = selectedApp = 0;
+      launcherGroup.visible = true;
+      onLauncherVisible?.(true);
+      redrawRows();
+      panel.visible = true;
+    } else selectedTile = null;
     stage(open ? `WorldOS native launcher opened: ${apps.length} apps` :
       'WorldOS native launcher closed');
+  }
+  function selectApp(app) {
+    if (!app || pendingLaunch) return;
+    pendingLaunch = { key: app.key, tile: selectedTile };
+    show(false);
+  }
+  function frame(dt) {
+    if (!open && !launcherGroup.visible) return;
+    const progress = launcherFlight.advance(open, Math.min(.1, Math.max(0, dt)));
+    if (!open && launcherFlight.settled) {
+      launcherGroup.visible = false;
+      onLauncherVisible?.(false);
+      query = '';
+      apps = allApps;
+      page = selectedApp = 0;
+      redrawRows();
+      const launch = pendingLaunch;
+      pendingLaunch = null;
+      if (launch) onOpen(launch.key, launch.tile);
+      return;
+    }
+    const travel = Math.max(0, Math.min(1, progress));
+    const tile = tilePose(progress);
+    launcherGroup.scale.setScalar(tile.side / TILE_SIDE);
+    launcherGroup.position.set((width / 2 - 46) * units * (1 - travel),
+      -(height / 2 - 46) * units * (1 - travel), 0);
+    launcherGroup.rotation.set(-.32 * travel,
+      SPATIAL_TURN * .55 * (1 - travel), -.09 * travel);
+  }
+  const launcherRay = new THREE.Raycaster();
+  const launcherNdc = new THREE.Vector2();
+  function launcherPointer(x, y) {
+    panel.updateWorldMatrix(true, false);
+    launcherNdc.set(x / width * 2 - 1, 1 - y / height * 2);
+    launcherRay.setFromCamera(launcherNdc, camera);
+    const hit = launcherRay.intersectObject(panel, false)[0];
+    if (!hit) return null;
+    const local = launcherGroup.worldToLocal(hit.point.clone());
+    return { x: local.x / units + width / 2,
+      y: height / 2 - local.y / units };
   }
   function pointer(x, y, clicked) {
     if (!clicked) return false;
@@ -629,27 +718,28 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       show(!open);
       return true;
     }
-    if (!open) return false;
-    if (x < panelLeft || x > panelLeft + panelWidth ||
-        y < panelTop || y > panelTop + panelHeight) {
+    if (!open) return launcherGroup.visible;
+    const hit = launcherPointer(x, y);
+    if (!hit || hit.x < panelLeft || hit.x > panelLeft + panelWidth ||
+        hit.y < panelTop || hit.y > panelTop + panelHeight) {
       show(false);
       return true;
     }
-    const column = Math.floor((x - panelLeft - 28) / (cardWidth + 14));
-    const row = Math.floor((y - panelTop - 108) / cardPitchY);
+    const { x: tileX, y: tileY } = hit;
+    const column = Math.floor((tileX - panelLeft - 28) / (cardWidth + 14));
+    const row = Math.floor((tileY - panelTop - 108) / cardPitchY);
     if (column >= 0 && column < columns && row >= 0 && row < pageRows &&
-        y >= panelTop + 108 + row * cardPitchY &&
-        y <= panelTop + 108 + row * cardPitchY + cardHeight) {
+        tileY >= panelTop + 108 + row * cardPitchY &&
+        tileY <= panelTop + 108 + row * cardPitchY + cardHeight) {
       const index = page * pageSize + row * columns + column;
       const app = apps[index];
       if (app) {
         selectedApp = index;
-        onOpen(app.key, selectedTile);
-        show(false);
+        selectApp(app);
       }
-    } else if (y >= panelTop + panelHeight - 44 && apps.length > pageSize) {
+    } else if (tileY >= panelTop + panelHeight - 44 && apps.length > pageSize) {
       const count = Math.ceil(apps.length / pageSize);
-      page = (page + (x < panelLeft + panelWidth - 90 ? -1 : 1) + count) % count;
+      page = (page + (tileX < panelLeft + panelWidth - 90 ? -1 : 1) + count) % count;
       selectedApp = page * pageSize;
       redrawRows();
     }
@@ -679,8 +769,8 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     }
     if (kind === 'enter') {
       const app = apps[selectedApp];
-      if (app) onOpen(app.key, selectedTile);
-      show(false);
+      if (app) selectApp(app);
+      else show(false);
       return true;
     }
     if (kind === 'up' || kind === 'down' || kind === 'left' || kind === 'right') {
@@ -696,7 +786,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     redrawRows();
     return true;
   }
-  return { resize, setApps, tick, pointer, key,
+  return { resize, setApps, tick, frame, pointer, key,
     close() { if (themeOpen) showTheme(false); else show(false); },
     text(input) {
       if (!open || typeof input !== 'string') return false;
@@ -734,7 +824,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       themeButtonPlate.visible = themeButtonText.visible = view !== 'people';
       redrawPeople();
     },
-    isOpen: () => open || themeOpen,
+    isOpen: () => launcherGroup.visible || themeOpen,
     refreshApps() { if (open) redrawRows(); },
     openAt(x, z) {
       selectedTile = { x, z };

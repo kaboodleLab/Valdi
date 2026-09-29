@@ -504,6 +504,7 @@ async function render() {
   const hud = createNativeShellHud({ THREE, scene, camera, manifest,
     readAsset: name => __nativeReadAsset(name),
     makeText,
+    onLauncherVisible: visible => conversation.setVisible(!visible),
     initialTheme: groundTheme,
     onTheme: setGroundTheme,
     iconForApp: app => {
@@ -1358,6 +1359,7 @@ async function render() {
         (pendingPreview && startedAt >= nextPreviewRetryAt))
       applyLiveState(frame % 60 === 0);
     if (frame % 60 === 0) hud.tick();
+    hud.frame(Math.min(.1, (interval ?? 16) / 1000));
     uniforms.uWave.value.set(waveX, waveZ,
       ((startedAt - waveStart) * waveUnitsPerMs) % 9.7, .46);
     uniforms.uWaveK.value.set(.42, .1, 1.25, 0);

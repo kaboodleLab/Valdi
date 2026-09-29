@@ -36,9 +36,14 @@ an empty space releases it immediately because there is no preview to await.
   rather than the browser's spinning globe fan.
 - The native app overlay now pages through a responsive grid and shows the
   authored GLB miniatures for matching catalog entries. Search and launch use
-  SPAOS's authenticated app keys. It still needs the browser's raised tile,
-  camera flight, spatial catalog bands, drag/scroll motion, shadows, and
-  landing animation. Long names currently shrink to fit their cards.
+  SPAOS's authenticated app keys. Its camera-fixed tile now borrows the
+  browser's spring and tile-pose law, lifts from the launcher button, and
+  settles with a visible side and shadow. Hit testing follows the transformed
+  tile, and app launch waits for the 300 ms close motion. The conversation card
+  clears while the catalog is open. This remains a HUD adaptation: the
+  browser's actual world cell, camera flight, spatial catalog bands,
+  drag/scroll motion, scene shadows, and icon landing are still missing.
+  Long names currently shrink to fit their cards.
 - FreeType removes the former all-caps, restricted-glyph presentation for
   Linux. The chat card now uses measured glyph widths for reply wrapping and
   input fitting. Native text still lacks complex-script shaping, color emoji,
@@ -111,9 +116,9 @@ an empty space releases it immediately because there is no preview to await.
 ## Next extraction boundary
 
 Prioritize the shell surfaces visible on every visit: share the browser's
-theme selection and transition law, converge the native app overlay toward
-the raised spatial tile and catalog bands, and add measured text layout and
-shaping. The native landscapes remain bounded adapters until the browser's
+theme selection and transition law, move the native app overlay from its
+camera-fixed tile to the real world cell and catalog bands, and add measured
+text layout and shaping. The native landscapes remain bounded adapters until the browser's
 ground scenes can expose reusable geometry and material contracts. SPAOS
 continues to own the space and window protocol. The marble pour, memory
 descent, and richer book motions remain later scene-parity work.

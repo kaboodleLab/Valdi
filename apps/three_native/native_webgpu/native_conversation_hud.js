@@ -92,13 +92,20 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     return true;
   }
   return {
+    setVisible(value) {
+      const visible = !!value;
+      if (root.visible === visible) return;
+      root.visible = visible;
+      if (!visible) focus = false;
+      else redraw();
+    },
     resize(nextWidth, nextHeight, extent) {
       width = nextWidth; height = nextHeight;
       units = 2 * extent / height;
       redraw();
     },
     pointer(x, y, clicked) {
-      if (!clicked) return false;
+      if (!root.visible || !clicked) return false;
       const inside = x >= (width - panelWidth()) / 2 &&
         x <= (width + panelWidth()) / 2 && y >= panelTop() && y <= panelTop() + 105;
       if (inside) { focus = true; redraw(); return true; }
