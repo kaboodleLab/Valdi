@@ -30,10 +30,13 @@ export WORLD_OS_NATIVE_ROSTER=$(mktemp "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.native
 agent_dir=$(mktemp -d "$XDG_RUNTIME_DIR/$WAYLAND_DISPLAY.native-agent.XXXXXXXX")
 chmod 700 "$agent_dir"
 export WORLD_OS_NATIVE_AGENT_SOCKET="$agent_dir/agent.sock"
+export WORLD_OS_NATIVE_AGENT_READY="$agent_dir/ready"
 node "$script_dir/native_people_roster_bridge.mjs" &
 roster_pid=$!
 for _ in {1..100}; do
-  [[ -S $WORLD_OS_NATIVE_AGENT_SOCKET ]] && break
+  # The socket file exists as soon as bind succeeds, before Node finishes
+  # listen(). Starting the renderer in that gap can strand its one-shot IPC.
+  [[ -f $WORLD_OS_NATIVE_AGENT_READY ]] && break
   if ! kill -0 "$roster_pid" 2>/dev/null; then
     echo 'Native World companion exited before its agent socket opened' >&2
     rm -f "$WORLD_OS_NATIVE_ROSTER"
@@ -42,7 +45,7 @@ for _ in {1..100}; do
   fi
   sleep .05
 done
-if [[ ! -S $WORLD_OS_NATIVE_AGENT_SOCKET ]]; then
+if [[ ! -f $WORLD_OS_NATIVE_AGENT_READY ]]; then
   echo 'Native World companion did not open its agent socket' >&2
   kill -TERM "$roster_pid" 2>/dev/null || true
   wait "$roster_pid" 2>/dev/null || true
@@ -65,5 +68,6 @@ wait "$world_pid" 2>/dev/null || true
 wait "$roster_pid" 2>/dev/null || true
 rm -f "$WORLD_OS_NATIVE_ROSTER"
 rm -f "$WORLD_OS_NATIVE_AGENT_SOCKET"
+rm -f "$WORLD_OS_NATIVE_AGENT_READY"
 rmdir "$agent_dir" 2>/dev/null || true
 exit "$status"

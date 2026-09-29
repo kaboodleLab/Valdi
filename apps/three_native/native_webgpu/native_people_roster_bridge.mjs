@@ -23,9 +23,11 @@ const runtime = process.env.XDG_RUNTIME_DIR;
 const stateFile = process.env.WORLD_OS_NATIVE_STATE;
 const worldRoot = process.env.SPAOS_WORLD_OS_ROOT;
 const agentSocket = process.env.WORLD_OS_NATIVE_AGENT_SOCKET;
+const agentReadyFile = process.env.WORLD_OS_NATIVE_AGENT_READY;
 if (!output || !runtime || !resolve(output).startsWith(resolve(runtime) + sep) ||
     !stateFile || !worldRoot || !stateFile.endsWith('/State/world.json') ||
-    !agentSocket || !resolve(agentSocket).startsWith(resolve(runtime) + sep))
+    !agentSocket || !resolve(agentSocket).startsWith(resolve(runtime) + sep) ||
+    agentReadyFile !== join(dirname(agentSocket), 'ready'))
   throw new Error('Native People roster needs a private runtime path, State/world.json and SPAOS_WORLD_OS_ROOT');
 const home = join(dirname(dirname(stateFile)), 'Home');
 const state = dirname(stateFile);
@@ -39,6 +41,7 @@ let native = null, nativeBuffer = '';
 let manifest = { verbs: [], appCatalog: { generation: 0, packages: [] } };
 const pending = new Set();
 const MAX_LINE = 256 * 1024;
+const MAX_AGENT_FRAME = 1024 * 1024;
 const sendNative = value => {
   if (!native || native.destroyed) return false;
   const body = JSON.stringify(value) + '\n';
@@ -54,7 +57,7 @@ const sendAgent = value => {
   if (!agent || agent.readyState !== WebSocket.OPEN) return false;
   const body = JSON.stringify(value);
   const bytes = Buffer.byteLength(body);
-  if (bytes > MAX_LINE || agent.bufferedAmount + bytes > 1024 * 1024) return false;
+  if (bytes > MAX_AGENT_FRAME || agent.bufferedAmount + bytes > MAX_AGENT_FRAME) return false;
   agent.send(body);
   return true;
 };
@@ -68,7 +71,8 @@ function dialAgent() {
     '/ws/agent?sid=' + encodeURIComponent(sid),
     { origin: frontend.url, handshakeTimeout: 5000, maxPayload: 1024 * 1024 });
   peer.on('open', () => {
-    sendAgent({ t: 'hello', worldSid: sid, ...manifest, lanes: [] });
+    if (!sendAgent({ t: 'hello', worldSid: sid, ...manifest, lanes: [] }))
+      console.error('[native-agent] could not publish initial verb manifest');
     status();
   });
   peer.on('message', raw => {
@@ -105,10 +109,14 @@ function onNativeLine(line) {
   try { value = JSON.parse(line); } catch { return; }
   if (value?.type === 'catalog') {
     manifest = projectNativeAgentManifest(value);
-    console.error(`[native-agent] published ${manifest.verbs.length} installed app and floor verbs ` +
-      `(generation ${manifest.appCatalog.generation})`);
-    if (agent?.readyState === WebSocket.OPEN) sendAgent({ t: 'hello',
-      worldSid: worldId, ...manifest, lanes: [] });
+    console.error(`[native-agent] published ${manifest.verbs.length} verbs ` +
+      `(${Array.isArray(value.sceneActions) ? value.sceneActions.length : 0} scene actions, ` +
+      `book.open ${manifest.verbs.some(verb => verb.name === 'book.open') ? 'present' : 'absent'}, ` +
+      `generation ${manifest.appCatalog.generation}, ` +
+      `${Buffer.byteLength(JSON.stringify(manifest))} bytes)`);
+    if (agent?.readyState === WebSocket.OPEN && !sendAgent({ t: 'hello',
+      worldSid: worldId, ...manifest, lanes: [] }))
+      console.error('[native-agent] could not publish updated verb manifest');
   } else if (value?.type === 'utterance') {
     const text = typeof value.text === 'string' ? value.text.trim() : '';
     if (!agentReady || !text || text.length > 2000 ||
@@ -122,27 +130,42 @@ function onNativeLine(line) {
   }
 }
 const agentServer = net.createServer(peer => {
-  if (native) { peer.destroy(); return; }
+  if (native) { console.error('[native-agent] duplicate renderer socket refused'); peer.destroy(); return; }
   native = peer;
+  console.error('[native-agent] renderer socket connected');
   nativeBuffer = '';
   peer.setNoDelay(true);
   peer.on('data', chunk => {
     nativeBuffer += chunk.toString('utf8');
-    if (Buffer.byteLength(nativeBuffer) > MAX_LINE) { peer.destroy(); return; }
     let end;
     while ((end = nativeBuffer.indexOf('\n')) >= 0) {
       const line = nativeBuffer.slice(0, end);
       nativeBuffer = nativeBuffer.slice(end + 1);
+      if (Buffer.byteLength(line) > MAX_LINE) {
+        console.error('[native-agent] renderer frame exceeded native socket limit');
+        peer.destroy(); return;
+      }
       onNativeLine(line);
     }
+    // A read may contain multiple complete frames. Bound only the unfinished
+    // tail, after splitting them, so a catalog burst cannot sever the socket.
+    if (Buffer.byteLength(nativeBuffer) > MAX_LINE) {
+      console.error('[native-agent] renderer frame exceeded native socket limit');
+      peer.destroy();
+    }
   });
-  peer.on('close', () => { if (native === peer) native = null; });
+  peer.on('close', () => {
+    if (native === peer) { native = null; console.error('[native-agent] renderer socket closed'); }
+  });
   status();
 });
 await new Promise((resolve, reject) => {
   agentServer.once('error', reject);
   agentServer.listen(agentSocket, resolve);
 });
+// The shell starts the renderer only after listen() completes. Checking the
+// socket pathname alone races Node's transition from bind to accepting peers.
+await writeFile(agentReadyFile, 'ready\n', { mode: 0o600, flag: 'wx' });
 let writes = Promise.resolve();
 function publish() {
   const body = JSON.stringify({ receivedAt, snapshot: connected ? snapshot : null });
@@ -203,6 +226,7 @@ async function close() {
   agent?.terminate();
   native?.destroy();
   await new Promise(resolve => agentServer.close(resolve));
+  await unlink(agentReadyFile).catch(() => {});
   await unlink(agentSocket).catch(() => {});
   await frontend.close();
   await writes;
