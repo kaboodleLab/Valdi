@@ -10,8 +10,9 @@ test('live roster uses service identities and avoids duplicate self', () => {
     ] };
   const rows = projectPeopleRoster(snapshot);
   assert.deepEqual(rows.map(row => [row.id, row.name, row.model]), [
-    ['a', 'Me', 'person-andrew'], ['b', 'Bob', 'person-worker'],
+    ['b', 'Bob', 'person-worker'], ['a', 'Me', 'person-andrew'],
   ]);
+  assert.deepEqual([rows[0].x, rows[0].z], [2.8, 0]);
   assert.notDeepEqual([rows[0].x, rows[0].z], [rows[1].x, rows[1].z]);
   assert.deepEqual(projectPeopleRoster(snapshot), rows);
 });
@@ -27,6 +28,7 @@ test('connecting roster keeps the local person without inventing remote presence
     members: [{ id: 'other', name: 'Other', character: 'matt' }] });
   assert.deepEqual(rows.map(row => [row.id, row.name, row.model]),
     [['me', 'Me', 'person-will']]);
+  assert.deepEqual([rows[0].x, rows[0].z], [2.8, 0]);
 });
 
 test('disabled presence still shows self without claiming remote people are present', () => {

@@ -145,7 +145,9 @@ async function render() {
   camera.position.copy(center).add(cameraOffset);
   camera.lookAt(center);
   uniforms.uCamPos.value.copy(camera.position);
-  uniforms.uFlatK.value = 0;
+  // Production WorldOS keeps the painted grid surface continuous beneath
+  // occupied tiles; the lattice is not visible on the Home floor.
+  uniforms.uFlatK.value = 1;
   uniforms.uTiles3D.value = 1;
   function applyWorldLight() {
     const now = new Date();

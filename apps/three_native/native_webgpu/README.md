@@ -75,8 +75,10 @@ The `three_scene.js` entry is an initial Three r186 bundle for that path.
 `world-home-composition.js` at bundle time. These supply the painted-grid node
 material, rounded tile geometry, Home camera/framing law and jar rig from the
 WorldOS engine. This entry loads seven authored GLBs, using
-the WorldOS Files stack's `assets/media/town/Box.glb` for Files. It also uses
-the production jar's lathe profile and tilt/spin hierarchy. Its landed pose
+the WorldOS Files stack's `assets/media/town/Box.glb` for Files. It uses the
+production flat-bed grid setting, so grout and the painted lattice stay
+hidden beneath the occupied tiles on Home. It also uses the production jar's
+lathe profile and tilt/spin hierarchy. Its landed pose
 and blue contact shadow use the shared WorldOS calculation and material. The
 native tile top is at local `TILE.H`; the adapter converts the browser pose
 from `WORLD_HOME.gridY` to that local datum before placing both meshes. The
@@ -137,6 +139,9 @@ The native Home draws people from a fresh authenticated roster, including the
 local person while network presence is off. Feet follow the meadow height,
 small name badges face the camera above each person, and clicking one opens the
 People card over the same scene. Back closes the card before leaving the World.
+Roster arrivals use the browser character engine's golden-angle seating. Home
+uses its 0.55-unit body stature and keeps stroll targets clear of the persistent
+conversation card; the focused People view retains its larger figures.
 Home does not draw the authored sample team when the roster is unavailable;
 the People card can still use that sample for its isolated demo. Set
 `globalThis.__nativeWorldPeopleOnHome = false` to disable Home people.

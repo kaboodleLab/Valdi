@@ -19,6 +19,8 @@ const SAMPLE_PEOPLE = TEAM.map(person => ({
     ? person.id : 'worker'}`,
   x: SAMPLE_POSITIONS[person.id][0], z: SAMPLE_POSITIONS[person.id][1],
 }));
+const PEOPLE_VIEW_STATURE = 1.12;
+const HOME_STATURE = .55; // WorldOS worker and custom character rigs use this height.
 
 // WorldOS's custom character rigs retarget the worker's authored animation
 // onto each person's bind pose. This narrow port uses the same quaternion and
@@ -237,7 +239,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
       mixer.update(0);
       const bounds = new THREE.Box3().setFromObject(body);
       const size = bounds.getSize(new THREE.Vector3());
-      body.scale.setScalar(1.12 / size.y);
+      body.scale.setScalar(PEOPLE_VIEW_STATURE / size.y);
       const fitted = new THREE.Box3().setFromObject(body);
       body.position.set(-(fitted.min.x + fitted.max.x) / 2, -.065 - fitted.min.y,
         -(fitted.min.z + fitted.max.z) / 2);
@@ -264,9 +266,9 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
         update(state, dt) {
           const y = open ? 0 : groundHeight(state.x, state.z);
           group.position.set(state.x, y, state.z);
-          group.scale.setScalar(open ? 1 : .85);
+          group.scale.setScalar(open ? 1 : HOME_STATURE / PEOPLE_VIEW_STATURE);
           group.rotation.y = state.heading;
-          actor.label.position.set(state.x, y + (open ? 1.35 : 1.16), state.z);
+          actor.label.position.set(state.x, y + (open ? 1.35 : .7), state.z);
           group.visible = actor.label.visible = state.alpha > .03;
           const next = state.speed > .02 ? walk : idle;
           if (next !== action) {
@@ -304,7 +306,10 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
       camera.updateMatrixWorld();
       viewPoint.set(point.x, groundHeight(point.x, point.z) + .3, point.z)
         .project(camera);
-      return Math.abs(viewPoint.x) < .8 && Math.abs(viewPoint.y) < .73 &&
+      // Home's persistent conversation card covers the bottom of the view;
+      // keep stroll targets clear of it while People view uses the full room.
+      return Math.abs(viewPoint.x) < .8 &&
+        Math.abs(viewPoint.y) < (open ? .73 : .5) &&
         Math.abs(viewPoint.z) < 1;
     },
   });

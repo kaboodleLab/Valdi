@@ -14,12 +14,12 @@ an empty space releases it immediately because there is no preview to await.
 
 | Concern | Authority and current implementation |
 | --- | --- |
-| Grid material and tile geometry | WorldOS `native-grid-scene.js`; consumed by the native bundle. |
+| Grid material and tile geometry | WorldOS `native-grid-scene.js`; consumed by the native bundle. Native Home now applies the browser's flat-bed setting, leaving a continuous ground surface beneath sparse occupied tiles. |
 | Home camera, occupancy fit, and jar rig | WorldOS `world-home-composition.js`; both browser and native consume its camera basis, Home framing law, jar profile, tilt/spin hierarchy, landed jar/contact-shadow pose and night-lamp law. Native People-on-Home adds vertical actor bounds to the fit. |
 | Jar glass and contact-shadow shaders | WorldOS `world-jar-materials.js`; browser and native import the same factories. Native scene capture and graphics adaptation are host owned. The native authored glass path is opt-in while its cost and full-scene color match are evaluated. |
 | Home hole mouth | WorldOS `world-hole-bell.js` owns the bell profile, analytic rim normals, vertex shade, and geometry in both hosts. `world-home-hole-appearance.js` owns the aperture and visibility rule. Native cuts the same circular aperture through its tile and painted grid, then supplies its own tile material and dark throat. Native Home starts with the settled hole open; its tile toggles the jar for comparison. |
 | Time of day | WorldOS `world-daylight.js` owns the room key palette, position and intensity for both renderers. Native `native_world_sun.mjs` projects the clock into the grid's sun-grade uniforms. The native jar uses the authored warm floor pool and local point light at night. |
-| Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. The native frame pump advances Three's animation callbacks so the GPU skeleton palette follows the simulation. |
+| Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. The native frame pump advances Three's animation callbacks so the GPU skeleton palette follows the simulation. Native roster arrivals follow the browser character engine's golden-angle seating, and Home renders bodies at its 0.55-unit stature. |
 | Encyclopedia body and Home pose | WorldOS `world-book-rig.js` owns the Home book group, tilt, rig, shadow, and pose application in both hosts. `world-book-action.js` defines native `book.open` input and pagination. Native Home prints the supplied short article, opens the cover in a focused reading view, and advances pages by click. The browser still has richer article generation, page graphics and physical page flips. |
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
 | App launch, enter, leave, reveal and release | Native World sends requests over its inherited privileged SPAOS channel. |
@@ -105,5 +105,5 @@ For acceptance, capture tty1 and tty2 at the same WorldOS state, ground
 selection, time of day, viewport, and camera pose. Check book/well placement,
 avatar positions, app tiles and previews, HUD controls, input targets, then
 repeat the launch/return and frame-timing probes. The current live visual
-comparison is useful for identifying gaps, but its different ground settings
-make a pixel-level claim premature.
+comparison is useful for identifying gaps, but differing live state, viewport,
+camera framing and remaining host materials make a pixel-level claim premature.
