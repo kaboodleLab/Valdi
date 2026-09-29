@@ -29,7 +29,7 @@ export function createNativeMeadowScene(THREE) {
   turf.name = 'meadowHills';
   turf.frustumCulled = false;
   root.add(turf);
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+  geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   // The same five-vertex tapered ribbon as production ground-scenes.js.
   const bladeGeometry = new THREE.BufferGeometry();

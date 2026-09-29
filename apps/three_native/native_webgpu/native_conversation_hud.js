@@ -13,7 +13,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
   root.add(background);
   const labels = [];
   let width = 720, height = 720, units = 1;
-  let focus = false, text = '', answer = 'ASK WORLDOS', ready = false;
+  let focus = false, text = '', answer = 'Ask WorldOS', ready = false;
   let awaiting = false, answerScroll = 0;
   let activeInputId = null, partial = '', lastPartialDraw = 0;
   const panelWidth = () => Math.max(180, Math.min(600, width - 170));
@@ -44,17 +44,17 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     background.scale.set(panel * units, 105 * units, 1);
     place(background, width / 2, panelTop() + 52);
     const left = (width - panel) / 2 + 18;
-    addLabel(ready ? 'WORLDOS' : 'WORLDOS OFFLINE', left, panelTop() + 17, 13,
+    addLabel(ready ? 'WorldOS' : 'WorldOS offline', left, panelTop() + 17, 13,
       ready ? [182, 214, 190] : [218, 170, 148]);
     const rows = answerRows();
     const start = Math.max(0, rows.length - 3 - answerScroll);
     if (rows.length > 3 && panel > 300)
-      addLabel(`${start + 1}-${Math.min(start + 3, rows.length)}/${rows.length}  UP/DOWN`,
+      addLabel(`${start + 1}-${Math.min(start + 3, rows.length)}/${rows.length}  Up/Down`,
         left + panel - 178, panelTop() + 17, 11, [183, 187, 192]);
     rows.slice(start, start + 3).forEach((row, index) =>
       addLabel(row, left, panelTop() + 37 + index * 17, 17, [242, 241, 237]));
     const input = text ? text.slice(-Math.max(18, Math.floor((panel - 45) / 8.5))) :
-      (focus ? 'TYPE A MESSAGE...' : 'CLICK HERE TO ASK');
+      (focus ? 'Type a message…' : 'Click here to ask');
     addLabel(`${focus ? '> ' : ''}${input}${focus ? '_' : ''}`, left,
       panelTop() + 88, 15, text ? [255, 255, 255] : [185, 187, 192]);
   }
@@ -62,7 +62,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     const said = text.trim();
     if (!said) return false;
     text = '';
-    answer = ready ? 'THINKING...' : 'THE WORLDOS MIND IS OFFLINE';
+    answer = ready ? 'Thinking…' : 'The WorldOS mind is offline';
     awaiting = ready;
     partial = ''; answerScroll = 0;
     redraw();
@@ -70,7 +70,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
       activeInputId = onSubmit(said);
       if (!activeInputId) {
         awaiting = false;
-        answer = 'THE WORLDOS MIND DISCONNECTED';
+        answer = 'The WorldOS mind disconnected';
         redraw();
       }
     }
@@ -114,7 +114,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
       if (ready === !!value) return;
       ready = !!value;
       if (!ready && awaiting) {
-        answer = 'THE WORLDOS MIND DISCONNECTED'; awaiting = false;
+        answer = 'The WorldOS mind disconnected'; awaiting = false;
         activeInputId = null; partial = '';
       }
       redraw();
@@ -132,13 +132,13 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
       if (!awaiting || !['done', 'failed', 'stopped'].includes(state)) return;
       awaiting = false;
       activeInputId = null;
-      answer = partial || (state === 'done' ? 'NO REPLY' :
-        state === 'stopped' ? 'REQUEST STOPPED' : 'REQUEST FAILED');
+      answer = partial || (state === 'done' ? 'No reply' :
+        state === 'stopped' ? 'Request stopped' : 'Request failed');
       partial = '';
       redraw();
     },
     say(value) {
-      answer = String(value || '').trim() || 'NO REPLY';
+      answer = String(value || '').trim() || 'No reply';
       awaiting = false;
       activeInputId = null; partial = ''; answerScroll = 0;
       redraw();

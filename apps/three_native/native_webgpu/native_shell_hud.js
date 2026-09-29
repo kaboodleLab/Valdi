@@ -2,6 +2,7 @@
 // browser World supplies its DOM chrome; Hermes has no DOM or canvas, so this
 // small camera-fixed layer draws text into RGBA textures and uses the real
 // WorldOS control artwork prepared alongside the GLBs.
+import { WORLD_THEMES, worldTheme } from './native_world_themes.mjs';
 const GLYPHS = {
   ' ': [0, 0, 0, 0, 0, 0, 0],
   '-': [0, 0, 0, 31, 0, 0, 0],
@@ -93,20 +94,45 @@ function textTexture(THREE, text, color, font) {
   return { texture, width, height };
 }
 
+function nativeTextTexture(THREE, text, color) {
+  const rendered = globalThis.__nativeRasterizeText(String(text).slice(0, 256));
+  const { width, height } = rendered;
+  const alpha = new Uint8Array(rendered.alpha);
+  if (width < 1 || height < 1 || alpha.length !== width * height)
+    throw new Error('Invalid native text bitmap');
+  const pixels = new Uint8Array(width * height * 4);
+  for (let index = 0; index < alpha.length; ++index) {
+    const offset = index * 4;
+    pixels[offset] = color[0];
+    pixels[offset + 1] = color[1];
+    pixels[offset + 2] = color[2];
+    pixels[offset + 3] = alpha[index];
+  }
+  const texture = new THREE.DataTexture(pixels, width, height, THREE.RGBAFormat);
+  texture.flipY = true;
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearFilter;
+  texture.needsUpdate = true;
+  return { texture, width, height };
+}
+
 export function createNativeText(THREE, manifest, readAsset) {
   const font = manifest.font ? { entry: manifest.font,
     pixels: new Uint8Array(readAsset(manifest.font.file)) } : null;
-  return (value, color) => textTexture(THREE, value, color, font);
+  return (value, color) => typeof globalThis.__nativeRasterizeText === 'function' ?
+    nativeTextTexture(THREE, value, color) : textTexture(THREE, value, color, font);
 }
 
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
   onBack, onPeople, onBook, onOpen, onSelectPerson, onFindPerson, onPausePeople,
-  allowHomePeoplePanel = false, stage,
+  allowHomePeoplePanel = false, iconForApp, initialTheme = 'classic', onTheme, stage,
   makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
   camera.add(root);
   scene.add(camera);
   const rows = [];
+  const appCards = [];
+  const appIcons = [];
   let allApps = [];
   let apps = [];
   let query = '';
@@ -119,11 +145,20 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   let page = 0;
   let minute = -1;
   let clock = null;
-  const pageSize = 10;
-  const panelWidth = 316;
-  const rowHeight = 31;
-  let panelHeight = 60 + rowHeight + 12;
+  let columns = 5;
+  let pageRows = 3;
+  let pageSize = columns * pageRows;
+  let panelWidth = 820;
+  let panelHeight = 486;
+  let panelLeft = 0;
+  let panelTop = 0;
+  let cardWidth = 0;
+  const cardHeight = 108;
+  const cardPitchY = 120;
   let view = 'home';
+  let themeOpen = false;
+  let themeIndex = Math.max(0, WORLD_THEMES.findIndex(theme =>
+    theme.key === worldTheme(initialTheme)));
   let peopleOpen = false;
   let peopleRows = [];
   let peopleSample = true;
@@ -196,22 +231,75 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   }
   const backPlate = roundPlate(42);
   const peoplePlate = roundPlate(48);
+  const themeButtonPlate = roundPlate(48);
   const bookPlate = roundPlate(48);
   const launcherPlate = roundPlate(48);
   const back = artwork('back', 36);
   if (back) back.scale.x = -back.scale.x;
   const launcher = artwork('launcher', 38);
-  const peopleText = label('PEOPLE', 0, 0, 12, [50, 49, 54], 'center');
-  const bookText = label('BOOK', 0, 0, 12, [50, 49, 54], 'center');
-  const peopleMark = label('SAMPLE PEOPLE', 0, 0, 10, [86, 84, 82], 'center');
+  const peopleText = label('People', 0, 0, 12, [50, 49, 54], 'center');
+  const themeButtonText = label('Theme', 0, 0, 12, [50, 49, 54], 'center');
+  const bookText = label('Book', 0, 0, 12, [50, 49, 54], 'center');
+  const peopleMark = label('Sample people', 0, 0, 10, [86, 84, 82], 'center');
   peopleMark.visible = false;
-  const panel = plane(panelWidth, panelHeight, solid(0xf8f5f2, .94), 1001);
-  const selectionPlate = plane(panelWidth - 24, rowHeight - 2,
-    solid(0xdde4ec, .9), 1005);
-  let header = label('APPS', 0, 0, 15);
-  let pageMark = label('1/1', 0, 0, 11);
+  const panel = plane(panelWidth, panelHeight, solid(0xf8f5f2, .97), 1001);
+  const selectionPlate = plane(1, cardHeight,
+    solid(0xdce6f0, .97), 1006);
+  let header = label('Apps', 0, 0, 24);
+  let searchMark = label('Search apps', 0, 0, 15, [103, 101, 99]);
+  let pageMark = label('1/1', 0, 0, 14);
   panel.visible = header.visible = pageMark.visible = false;
+  searchMark.visible = false;
   const peoplePanel = plane(peopleWidth, 100, solid(0xf8f5f2, .97), 1001);
+  const themeWidth = 254;
+  const themeHeight = 318;
+  const themePanel = plane(themeWidth, themeHeight, solid(0xf8f5f2, .98), 1001);
+  const themeSelection = plane(themeWidth - 24, 47, solid(0xdce6f0, .96), 1005);
+  const themeLabels = [];
+  const themeSwatches = [];
+  themePanel.visible = themeSelection.visible = false;
+  let themeTop = 0;
+  function redrawTheme() {
+    while (themeLabels.length) removeLabel(themeLabels.pop());
+    themeTop = Math.max(70, height - themeHeight - 94);
+    place(themePanel, 18 + themeWidth / 2, themeTop + themeHeight / 2);
+    const title = label('Choose environment', 39, themeTop + 30, 19);
+    title.visible = themeOpen;
+    themeLabels.push(title);
+    WORLD_THEMES.forEach((theme, index) => {
+      const y = themeTop + 76 + index * 47;
+      const name = label(theme.label, 89, y, 17);
+      name.visible = themeOpen;
+      themeLabels.push(name);
+      let swatch = themeSwatches[index];
+      if (!swatch) {
+        swatch = new THREE.Mesh(new THREE.SphereGeometry(.5, 24, 16),
+          new THREE.MeshBasicMaterial({ color: theme.color, transparent: true,
+            depthTest: false, depthWrite: false, toneMapped: false }));
+        swatch.renderOrder = 1010;
+        root.add(swatch);
+        themeSwatches[index] = swatch;
+      }
+      swatch.scale.setScalar(32 * units);
+      swatch.userData.previousUnits = units;
+      place(swatch, 59, y);
+      swatch.position.z = -.94;
+      swatch.visible = themeOpen;
+    });
+    place(themeSelection, 18 + themeWidth / 2, themeTop + 76 + themeIndex * 47);
+    themePanel.visible = themeSelection.visible = themeOpen;
+  }
+  function showTheme(next) {
+    if (next && open) show(false);
+    themeOpen = next;
+    redrawTheme();
+    stage(`WorldOS native theme picker ${next ? 'opened' : 'closed'}`);
+  }
+  function selectTheme(index) {
+    themeIndex = (index + WORLD_THEMES.length) % WORLD_THEMES.length;
+    onTheme?.(WORLD_THEMES[themeIndex].key);
+    showTheme(false);
+  }
   const peopleSelection = plane(peopleWidth - 24, 31, solid(0xdde4ec, .92), 1005);
   const pausePlate = plane(176, 29, solid(0xe6e9e5, .94), 1005);
   const findPlate = plane(142, 29, solid(0xe6e9e5, .94), 1005);
@@ -236,8 +324,8 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       item.visible = peopleOpen;
       peopleLabels.push(item);
     };
-    add('PEOPLE', left + 20, peopleTop + 30, 24);
-    add(peopleSample ? 'SAMPLE' : 'LIVE', left + peopleWidth - 96,
+    add('People', left + 20, peopleTop + 30, 24);
+    add(peopleSample ? 'Sample' : 'Live', left + peopleWidth - 96,
       peopleTop + 30, 13, peopleSample ? [122, 93, 70] : [52, 119, 90]);
     add(peopleSample ? 'Simulated presence' : 'Present now',
       left + 20, peopleTop + 56, 14, [99, 98, 96]);
@@ -245,7 +333,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       const row = shown[index];
       add(row.name || row.id, left + 24,
         peopleTop + 84 + index * peopleRowHeight, 19);
-      add('HERE', left + peopleWidth - 68,
+      add('Here', left + peopleWidth - 68,
         peopleTop + 84 + index * peopleRowHeight, 12, [73, 99, 73]);
     }
     const selected = shown.findIndex(row => row.id === peopleSelected);
@@ -256,10 +344,10 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     const footer = peopleTop + peopleHeight - 68;
     place(pausePlate, left + 108, footer);
     place(findPlate, left + 91, footer + 34);
-    add(peoplePaused ? 'RESUME WANDERING' : 'PAUSE WANDERING',
+    add(peoplePaused ? 'Resume wandering' : 'Pause wandering',
       left + 30, footer, 14);
-    add('FIND ON GRID', left + 30, footer + 34, 14);
-    if (pages > 1) add(`${peoplePage + 1}/${pages}  NEXT`,
+    add('Find on grid', left + 30, footer + 34, 14);
+    if (pages > 1) add(`${peoplePage + 1}/${pages}  Next`,
       left + peopleWidth - 109, footer + 34, 13);
     peoplePanel.visible = peopleOpen;
     pausePlate.visible = findPlate.visible = peopleOpen;
@@ -267,42 +355,110 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
 
   function redrawRows() {
     while (rows.length) removeLabel(rows.pop());
+    while (appCards.length) removeLabel(appCards.pop());
+    while (appIcons.length) {
+      const icon = appIcons.pop();
+      root.remove(icon);
+      icon.traverse(object => {
+        if (object.isMesh) {
+          const materials = Array.isArray(object.material) ? object.material : [object.material];
+          for (const material of materials) material?.dispose();
+        }
+      });
+    }
     removeLabel(header);
-    header = label(query ? `SEARCH ${query.slice(0, 17)}` :
-      selectedTile ? `APPS - ${selectedTile.x}/${selectedTile.z}` : 'APPS',
-      0, 0, 15);
-    header.visible = open;
-    panelHeight = 60 + Math.max(1, Math.min(pageSize, apps.length)) * rowHeight +
-      (apps.length > pageSize ? 34 : 12);
-    panel.scale.y = panelHeight * units;
+    removeLabel(searchMark);
+    removeLabel(pageMark);
+    columns = width < 620 ? 2 : width < 900 ? 3 : 5;
+    pageRows = height < 850 ? 2 : 3;
+    pageSize = columns * pageRows;
+    panelWidth = Math.min(width - 56, columns === 2 ? 500 :
+      columns === 3 ? 660 : 820);
     const count = Math.max(1, Math.ceil(apps.length / pageSize));
     page = Math.max(0, Math.min(page, count - 1));
-    removeLabel(pageMark);
-    pageMark = label(`${page + 1}/${count}`, 0, 0, 11);
-    pageMark.visible = open && apps.length > pageSize;
-    const x = width - 22 - panelWidth;
-    const top = height - 22 - 48 - 12 - panelHeight;
-    place(panel, x + panelWidth / 2, top + panelHeight / 2);
-    place(header, x + 22 + header.scale.x / units / 2, top + 29);
-    place(pageMark, x + panelWidth - 50, top + panelHeight - 17);
+    const shown = Math.min(pageSize, Math.max(0, apps.length - page * pageSize));
+    panelHeight = 110 + Math.max(1, Math.ceil(shown / columns)) * cardPitchY + 40;
+    panelLeft = (width - panelWidth) / 2;
+    panelTop = Math.max(75, (height - panelHeight) / 2 - 18);
+    const gap = 14;
+    cardWidth = (panelWidth - 56 - (columns - 1) * gap) / columns;
+    const pitchX = cardWidth + gap;
+    panel.scale.set(panelWidth * units, panelHeight * units, 1);
+    selectionPlate.scale.set((cardWidth + 2) * units, (cardHeight + 2) * units, 1);
+    place(panel, width / 2, panelTop + panelHeight / 2);
+    header = label('Apps', panelLeft + 28, panelTop + 34, 27);
+    searchMark = label(query ? `Search: ${query}` : 'Search apps…',
+      panelLeft + 28, panelTop + 72, 16, [103, 101, 99]);
+    header.visible = searchMark.visible = open;
+    pageMark = label(`${page + 1} / ${count}    Prev  ·  Next`,
+      panelLeft + panelWidth - 180, panelTop + panelHeight - 22, 14);
+    pageMark.visible = open && count > 1;
     for (let index = 0; index < pageSize; ++index) {
       const app = apps[page * pageSize + index];
       if (!app) break;
-      const item = label(appName(app).slice(0, 28), x + 23,
-        top + 62 + index * rowHeight, 15);
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      const centerX = panelLeft + 28 + cardWidth / 2 + column * pitchX;
+      const centerY = panelTop + 108 + cardHeight / 2 + row * cardPitchY;
+      const card = plane(cardWidth, cardHeight, solid(0xffffff, .79), 1004);
+      place(card, centerX, centerY);
+      card.visible = open;
+      appCards.push(card);
+      const icon = open ? iconForApp?.(app) : null;
+      if (icon) {
+        icon.rotation.y = -.32;
+        const bounds = new THREE.Box3().setFromObject(icon);
+        const extent = bounds.getSize(new THREE.Vector3());
+        const longest = Math.max(extent.x, extent.y, extent.z);
+        if (longest > 0) icon.scale.multiplyScalar(58 * units / longest);
+        const fitted = new THREE.Box3().setFromObject(icon);
+        const center = fitted.getCenter(new THREE.Vector3());
+        icon.position.set((centerX - width / 2) * units - center.x,
+          (height / 2 - centerY + 11) * units - center.y, -.87 - center.z);
+        icon.traverse(object => {
+          if (!object.isMesh) return;
+          object.renderOrder = 1015;
+          const convert = material => {
+            const copy = material.clone();
+            copy.transparent = true;
+            copy.depthTest = false;
+            copy.depthWrite = false;
+            return copy;
+          };
+          object.material = Array.isArray(object.material) ?
+            object.material.map(convert) : convert(object.material);
+        });
+        root.add(icon);
+        icon.visible = open;
+        appIcons.push(icon);
+      } else {
+        const initials = appName(app).split(/\s+/).map(word => word[0] || '').join('').slice(0, 2);
+        const badge = label(initials || '?', centerX,
+          centerY - 11, 30, [103, 103, 110], 'center');
+        badge.visible = open;
+        rows.push(badge);
+      }
+      const item = label(appName(app), centerX, centerY + 35, 17,
+        [50, 49, 54], 'center');
+      item.scale.x = Math.min(item.scale.x, (cardWidth - 12) * units);
       item.visible = open;
       rows.push(item);
     }
     if (query && !apps.length) {
-      const empty = label('NO MATCHES', x + 23, top + 62, 15);
+      const empty = label('No matching apps', width / 2,
+        panelTop + panelHeight / 2, 20, [98, 97, 96], 'center');
       empty.visible = open;
       rows.push(empty);
     }
     const selectedRow = selectedApp - page * pageSize;
     selectionPlate.visible = open && apps.length > 0 &&
-      selectedRow >= 0 && selectedRow < rows.length;
-    if (selectionPlate.visible)
-      place(selectionPlate, x + panelWidth / 2, top + 62 + selectedRow * rowHeight);
+      selectedRow >= 0 && selectedRow < pageSize;
+    if (selectionPlate.visible) {
+      const column = selectedRow % columns;
+      const row = Math.floor(selectedRow / columns);
+      place(selectionPlate, panelLeft + 28 + cardWidth / 2 + column * pitchX,
+        panelTop + 108 + cardHeight / 2 + row * cardPitchY);
+    }
   }
   function resize(nextWidth, nextHeight, extent) {
     width = nextWidth;
@@ -318,6 +474,8 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     place(backPlate, 41, 39);
     place(peoplePlate, 46, height - 46);
     place(peopleText, 46, height - 46);
+    place(themeButtonPlate, 108, height - 46);
+    place(themeButtonText, 108, height - 46);
     place(bookPlate, width - 108, height - 46);
     place(bookText, width - 108, height - 46);
     place(peopleMark, width / 2, 62);
@@ -327,6 +485,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     if (clock) place(clock, width / 2, 37);
     redrawRows();
     redrawPeople();
+    redrawTheme();
   }
   function setApps(next) {
     allApps = next.filter(app => typeof app.key === 'string' && !app.hidden)
@@ -362,10 +521,12 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     apps = allApps;
     page = selectedApp = 0;
     redrawRows();
-    panel.visible = header.visible = open;
+    panel.visible = header.visible = searchMark.visible = open;
     pageMark.visible = open && apps.length > pageSize;
     selectionPlate.visible = open && apps.length > 0;
     for (const row of rows) row.visible = open;
+    for (const card of appCards) card.visible = open;
+    for (const icon of appIcons) icon.visible = open;
     stage(open ? `WorldOS native launcher opened: ${apps.length} apps` :
       'WorldOS native launcher closed');
   }
@@ -378,13 +539,28 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     }
     if (x >= 18 && x <= 74 && y >= height - 74 && y <= height - 18) {
       if (open) show(false);
+      if (themeOpen) showTheme(false);
       onPeople?.();
+      return true;
+    }
+    if (view !== 'people' && x >= 80 && x <= 136 &&
+        y >= height - 74 && y <= height - 18) {
+      showTheme(!themeOpen);
       return true;
     }
     if (x >= width - 138 && x <= width - 78 &&
         y >= height - 74 && y <= height - 18) {
       if (open) show(false);
+      if (themeOpen) showTheme(false);
       onBook?.();
+      return true;
+    }
+    if (themeOpen) {
+      if (x >= 18 && x <= 18 + themeWidth &&
+          y >= themeTop && y <= themeTop + themeHeight) {
+        const index = Math.floor((y - themeTop - 52) / 47);
+        if (index >= 0 && index < WORLD_THEMES.length) selectTheme(index);
+      } else showTheme(false);
       return true;
     }
     if (peopleOpen) {
@@ -432,22 +608,26 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       return true;
     }
     if (!open) return false;
-    const left = width - 22 - panelWidth;
-    const top = height - 22 - 48 - 12 - panelHeight;
-    if (x < left || x > left + panelWidth || y < top || y > top + panelHeight) {
+    if (x < panelLeft || x > panelLeft + panelWidth ||
+        y < panelTop || y > panelTop + panelHeight) {
       show(false);
       return true;
     }
-    const row = Math.floor((y - top - 46) / rowHeight);
-    if (row >= 0 && row < pageSize) {
-      const app = apps[page * pageSize + row];
+    const column = Math.floor((x - panelLeft - 28) / (cardWidth + 14));
+    const row = Math.floor((y - panelTop - 108) / cardPitchY);
+    if (column >= 0 && column < columns && row >= 0 && row < pageRows &&
+        y >= panelTop + 108 + row * cardPitchY &&
+        y <= panelTop + 108 + row * cardPitchY + cardHeight) {
+      const index = page * pageSize + row * columns + column;
+      const app = apps[index];
       if (app) {
-        selectedApp = page * pageSize + row;
+        selectedApp = index;
         onOpen(app.key, selectedTile);
         show(false);
       }
-    } else if (y >= top + panelHeight - 35 && apps.length > pageSize) {
-      page = (page + 1) % Math.ceil(apps.length / pageSize);
+    } else if (y >= panelTop + panelHeight - 44 && apps.length > pageSize) {
+      const count = Math.ceil(apps.length / pageSize);
+      page = (page + (x < panelLeft + panelWidth - 90 ? -1 : 1) + count) % count;
       selectedApp = page * pageSize;
       redrawRows();
     }
@@ -456,6 +636,20 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   resize(width, height, 5.8);
   tick();
   function key(kind) {
+    if (themeOpen) {
+      if (kind === 'enter') selectTheme(themeIndex);
+      else if (kind === 'up' || kind === 'left') {
+        themeIndex = (themeIndex - 1 + WORLD_THEMES.length) % WORLD_THEMES.length;
+        redrawTheme();
+      } else if (kind === 'down' || kind === 'right') {
+        themeIndex = (themeIndex + 1) % WORLD_THEMES.length;
+        redrawTheme();
+      } else if (kind === 'home') {
+        themeIndex = 0;
+        redrawTheme();
+      } else return false;
+      return true;
+    }
     if (!open) return false;
     if (kind === 'backspace') {
       setQuery([...query].slice(0, -1).join(''));
@@ -467,14 +661,11 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       show(false);
       return true;
     }
-    if (kind === 'up' || kind === 'down') {
-      if (apps.length) selectedApp = (selectedApp + (kind === 'down' ? 1 : -1) +
-        apps.length) % apps.length;
+    if (kind === 'up' || kind === 'down' || kind === 'left' || kind === 'right') {
+      const step = kind === 'up' ? -columns : kind === 'down' ? columns :
+        kind === 'left' ? -1 : 1;
+      if (apps.length) selectedApp = (selectedApp + step + apps.length) % apps.length;
       page = Math.floor(selectedApp / pageSize);
-    } else if (kind === 'left' || kind === 'right') {
-      const pageCount = Math.max(1, Math.ceil(apps.length / pageSize));
-      page = (page + (kind === 'right' ? 1 : -1) + pageCount) % pageCount;
-      selectedApp = page * pageSize;
     } else if (kind === 'home') {
       page = selectedApp = 0;
     } else {
@@ -483,10 +674,11 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     redrawRows();
     return true;
   }
-  return { resize, setApps, tick, pointer, key, close: () => show(false),
+  return { resize, setApps, tick, pointer, key,
+    close() { if (themeOpen) showTheme(false); else show(false); },
     text(input) {
       if (!open || typeof input !== 'string') return false;
-      const printable = input.replace(/[^A-Za-z0-9 ._-]/g, '');
+      const printable = input.replace(/[\r\n\t]/g, '');
       if (printable) setQuery(query + printable);
       return true;
     },
@@ -513,12 +705,15 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     setView(nextView, sample = true) {
       view = nextView;
       if (view !== 'people' && !allowHomePeoplePanel) peopleOpen = false;
+      if (view === 'people' && themeOpen) showTheme(false);
       peopleSample = sample;
       peoplePlate.material.opacity = view === 'people' ? .8 : .38;
       peopleMark.visible = view === 'people' && sample;
+      themeButtonPlate.visible = themeButtonText.visible = view !== 'people';
       redrawPeople();
     },
-    isOpen: () => open,
+    isOpen: () => open || themeOpen,
+    refreshApps() { if (open) redrawRows(); },
     openAt(x, z) {
       selectedTile = { x, z };
       if (open) { setQuery(''); redrawRows(); }

@@ -10,7 +10,8 @@ import { createWorldJarGlassMaterial, createWorldJarContactShadowMaterial }
 import { createHomeMaterial } from '@worldos/home-material';
 import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
-import { createNativeMeadowScene } from './native_meadow_scene.js';
+import { createNativeLandscapeScene } from './native_landscape_scene.js';
+import { worldTheme } from './native_world_themes.mjs';
 import { createNativeHomeBookScene } from './native_home_book_scene.js';
 import { createNativeHomeHoleScene } from './native_home_hole_scene.js';
 import { WORLD_BOOK_OPEN_ACTION, parseWorldBookOpen }
@@ -102,15 +103,16 @@ async function render() {
   grid.rotation.x = -Math.PI / 2;
   grid.position.y = -.002;
   homeRoot.add(grid);
-  const meadow = globalThis.__nativeWorldGround === 'meadow' ?
-    createNativeMeadowScene(THREE) : null;
-  if (meadow) {
-    homeRoot.add(meadow.root);
-    __webgpuSurfaceStage(`WorldOS native meadow prepared: ${JSON.stringify(meadow.stats())}`);
+  let groundTheme = worldTheme(globalThis.__nativeWorldGround);
+  let landscape = createNativeLandscapeScene(THREE, groundTheme);
+  if (landscape) {
+    homeRoot.add(landscape.root);
+    grid.visible = false;
+    __webgpuSurfaceStage(`WorldOS native ${groundTheme} prepared: ${JSON.stringify(landscape.stats())}`);
   }
   renderer.toneMapping = THREE.NoToneMapping;
-  const homeBackground = meadow ? new THREE.Color(0x13210e) : core.COL_BG;
-  scene.background = homeBackground;
+  const homeBackground = new THREE.Color(0x13210e);
+  scene.background = landscape ? homeBackground : core.COL_BG;
   const fill = new THREE.HemisphereLight(0xffffff, 0xe8e6e2, 0);
   scene.add(fill);
   const light = new THREE.DirectionalLight(0xfff4e2, 0);
@@ -176,10 +178,17 @@ async function render() {
     light.position.set(...key.direction).multiplyScalar(20);
     light.color.setHex(key.colorA).lerp(keyColorB.setHex(key.colorB), key.colorMix);
     fill.intensity = .6 * Math.min(1, Math.max(0, key.intensity / 3));
-    if (meadow) homeBackground.setRGB(
-      .013 + .016 * (1 - grade.night),
-      .023 + .043 * (1 - grade.night),
-      .007 + .013 * (1 - grade.night));
+    if (landscape) {
+      const colors = {
+        meadow: [.013, .023, .007, .016, .043, .013],
+        desert: [.25, .18, .10, .35, .27, .15],
+        tropical: [.05, .12, .15, .20, .30, .35],
+        lunar: [.04, .05, .06, .13, .14, .16],
+      };
+      const [r, g, b, dr, dg, db] = colors[groundTheme];
+      homeBackground.setRGB(r + dr * (1 - grade.night),
+        g + dg * (1 - grade.night), b + db * (1 - grade.night));
+    }
   }
   applyWorldLight();
 
@@ -319,6 +328,26 @@ async function render() {
   let pendingPreview = false;
   let nextPreviewRetryAt = Infinity;
   let pendingIconRefresh = false;
+  function setGroundTheme(next) {
+    const kind = worldTheme(next);
+    if (kind === groundTheme) return;
+    if (landscape) {
+      homeRoot.remove(landscape.root);
+      landscape.dispose();
+    }
+    groundTheme = kind;
+    landscape = createNativeLandscapeScene(THREE, kind);
+    if (landscape) {
+      homeRoot.add(landscape.root);
+      landscape.setOccupiedCells(occupiedCells);
+      if (currentJarCell) landscape.setHole(currentJarCell.x, currentJarCell.z);
+    }
+    grid.visible = !landscape;
+    scene.background = landscape ? homeBackground : core.COL_BG;
+    applyWorldLight();
+    seenRevision = null;
+    __webgpuSurfaceStage(`WorldOS native theme: ${kind}`);
+  }
   let cachedState = { layout: {}, props: [] };
   let cachedFileFloor = null;
   let cachedFileFloorRevision = null;
@@ -396,7 +425,7 @@ async function render() {
     tile.visible = visible;
   }
   const people = createNativePeopleScene({ THREE, scene, camera, tileGeometry, makeText,
-    groundHeight: (x, z) => meadow?.heightAt(x, z) ?? 0,
+    groundHeight: (x, z) => landscape?.heightAt(x, z) ?? 0,
     loadModel: name => new Promise((resolve, reject) => {
       const loader = nativeIconLoader(name, manifest);
       loader.parse(__nativeReadAsset(`${name}.glb`), '',
@@ -457,7 +486,7 @@ async function render() {
       extent = homeExtent;
       people.leave();
       homeRoot.visible = true;
-      scene.background = homeBackground;
+      scene.background = landscape ? homeBackground : core.COL_BG;
       camera.position.copy(center).add(cameraOffset);
       camera.lookAt(center);
       uniforms.uCamPos.value.copy(camera.position);
@@ -475,6 +504,15 @@ async function render() {
   const hud = createNativeShellHud({ THREE, scene, camera, manifest,
     readAsset: name => __nativeReadAsset(name),
     makeText,
+    initialTheme: groundTheme,
+    onTheme: setGroundTheme,
+    iconForApp: app => {
+      const name = [app.icon, app.key, app.name].map(appIconName)
+        .find(candidate => manifest[candidate]?.images);
+      if (!name) return null;
+      requestModel(name);
+      return modelByName.get(name)?.icon.clone(true) || null;
+    },
     allowHomePeoplePanel: peopleOnHome,
     stage: message => __webgpuSurfaceStage(message),
     onBack: () => globalThis.__worldBack(),
@@ -739,7 +777,9 @@ async function render() {
         !pendingPreview && !pendingIconRefresh) return;
     const snapshotChanged = state.rev !== seenRevision ||
       floorRevision !== seenFloorRevision;
+    const iconsChanged = pendingIconRefresh;
     pendingIconRefresh = false;
+    if (iconsChanged) hud.refreshApps();
     const layout = state.layout || {};
     const props = Array.isArray(state.props) ? state.props : [];
     const spaces = Array.isArray(floor?.spaces) ? floor.spaces :
@@ -1045,11 +1085,10 @@ async function render() {
     appAtCell = nextAppAtCell;
     previewGenerationBySpace = nextPreviewGenerationBySpace;
     occupiedCells = nextOccupiedCells;
-    if (meadow) {
-      if (meadow.setOccupiedCells(nextOccupiedCells))
-        __webgpuSurfaceStage(`WorldOS meadow cleared ${nextOccupiedCells.size} floor cells; ` +
-          `${meadow.stats().blades} blades remain`);
-      if (jarPresent) meadow.setHole(jarX, jarZ);
+    if (landscape) {
+      if (landscape.setOccupiedCells(nextOccupiedCells))
+        __webgpuSurfaceStage(`WorldOS ${groundTheme} cleared ${nextOccupiedCells.size} floor cells`);
+      if (jarPresent) landscape.setHole(jarX, jarZ);
     }
     if (snapshotChanged)
       __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jarPresent)} app cells, jar ${jarPresent}, hole ${jarPresent && holeOpen}`);

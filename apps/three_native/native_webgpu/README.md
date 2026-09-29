@@ -317,12 +317,14 @@ spaos-compositor --new-window \
 ```
 
 The native World scene reads SPAOS's app catalog and draws a camera-fixed
-clock, Back button and app launcher over the Three scene. Back and launcher
-use WorldOS's authored control artwork. Clicking free ground opens the launcher
-for that exact tile; the launcher button finds nearby free ground. A pick
-rechecks occupancy before asking SPAOS to open the app. Up/Down select launcher
-rows, Left/Right change pages, and Enter opens the selected app. Typing while
-the launcher is open filters SPAOS's authenticated catalog by name or key;
+clock, Back button, theme selector, and app catalog over the Three scene. Back
+and launcher use WorldOS's authored control artwork. Clicking free ground opens
+the catalog for that exact tile; the launcher button finds nearby free ground.
+The catalog shows the prepared WorldOS GLB miniatures when available and a
+text badge otherwise. Its responsive grid pages through the authenticated
+catalog; arrow keys move the selection and Enter opens it. A pick rechecks
+occupancy before asking SPAOS to open the app. Typing while the catalog is open
+filters SPAOS's authenticated apps by name or key;
 Backspace edits the search. A search with no matches shows an empty result.
 Clicking an
 occupied floor tile enters its space. Escape or Back leaves the active space;
@@ -351,9 +353,16 @@ snapshots naming that older space do not cancel the wait. A call carrying a `tas
 the person.
 
 The asset preparation step decodes the available WorldOS app-icon GLBs, while
-the runtime loads an icon only when a live space or saved app prop needs it.
-An app with no matching artwork gets a text label from the same WorldOS font
-atlas as the native HUD. Removed spaces and props release their scene nodes,
+the runtime loads an icon only when a live space, saved app prop, or visible
+catalog card needs it. An app with no matching artwork gets a text label.
+On Linux, the host uses FreeType to rasterize mixed-case UTF-8 strings for
+Three textures. Set `WORLD_OS_NATIVE_FONT` to a local font path or place
+`native-font.otf` in `WORLD_OS_NATIVE_ASSETS` to use the authored face; the
+host otherwise tries installed FreeSans or DejaVu Sans. The authored font file
+is not bundled with Valdi. The small uppercase atlas remains a fallback for
+older hosts. Native rasterization currently has basic kerning but does not
+shape complex scripts or provide color emoji.
+Removed spaces and props release their scene nodes,
 preview textures and labels. The prepared asset directory
 currently occupies about 196 MiB for 40 GLBs and their decoded textures on
 the Linux host, so a production package should avoid duplicating these files
@@ -496,9 +505,13 @@ This is still a focused native WorldOS shell slice hosted by ValdiLinux's
 Hermes runtime, rather than a Valdi custom view or a full port of `World.html`.
 Its volume reader covers layout and app presence; SPAOS remains the authority
 for spaces, previews and app input. The native shell currently has the core
-floor, previews, Back, clock and launcher. Production jar shading is available
-as an opt-in path. The rest of the WorldOS HUD, 3D launcher lattice, full chat
-presentation, voice, notifications and app surfaces remain separate work.
+floor, previews, Back, clock, catalog, and five-choice theme selector. The
+Rolling meadow uses the native adapter for WorldOS's terrain and grass math;
+Desert dunes, Tropical island, and Lunar surface have simpler native terrain
+adapters. Theme choices are session-local. The browser's animated globe picker,
+scene transitions, scenery detail, and raised 3D app launcher remain separate
+parity work. Production jar shading is available as an opt-in path. Full chat
+presentation, voice, notifications and app surfaces also remain separate work.
 
 ### Native SPAOS Shell capability slice
 

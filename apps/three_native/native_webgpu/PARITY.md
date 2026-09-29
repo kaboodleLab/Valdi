@@ -24,9 +24,25 @@ an empty space releases it immediately because there is no preview to await.
 | App catalog, spaces, window seats, previews | SPAOS World channel; native host and scene read snapshots, SPAOS composites windows. |
 | App launch, enter, leave, reveal and release | Native World sends requests over its inherited privileged SPAOS channel. |
 | Space dock and app controls | Native Space UI sends bounded requests through its Shell controller; SPAOS checks the latest snapshot. |
+| Native HUD text | Linux host rasterizes UTF-8 with FreeType into Three textures. The WorldOS font can be supplied from the local asset root without packaging it in Valdi; installed open fonts are fallbacks. |
 
 ## Gaps against the production World on tty1
 
+- The theme selector now exposes the browser's five named environments in
+  tty2. Classic and Rolling meadow use the existing native surfaces; Desert
+  dunes, Tropical island, and Lunar surface use bounded native terrain
+  adapters. Those three still need the browser's scenery, water, atmospheric
+  detail, transitions, and persistence. The selector is a flat native panel
+  rather than the browser's spinning globe fan.
+- The native app overlay now pages through a responsive grid and shows the
+  authored GLB miniatures for matching catalog entries. Search and launch use
+  SPAOS's authenticated app keys. It still needs the browser's raised tile,
+  camera flight, spatial catalog bands, drag/scroll motion, shadows, and
+  landing animation. Long names currently shrink to fit their cards.
+- FreeType removes the former all-caps, restricted-glyph presentation for
+  Linux. Native text still lacks complex-script shaping, color emoji, and
+  browser-equivalent line metrics. The chat card's wrapping remains based on
+  character counts rather than measured glyph widths.
 - Home composition differs visibly. The native meadow and jar demonstration
   now shares the production camera basis and Home framing law. Its hole mouth
   has the production bell geometry, but not the browser's marble pour, memory
@@ -94,12 +110,13 @@ an empty space releases it immediately because there is no preview to await.
 
 ## Next extraction boundary
 
-Carry the shared aperture into the pour and memory descent interaction; those
-still live in the full browser World engine. Converge browser and native book
-article layout and page motion, then
-bring the chat bar and status controls across. Shared scene leaves own
-geometry and pose while hosts supply materials and route input. SPAOS still
-owns the space and window protocol.
+Prioritize the shell surfaces visible on every visit: share the browser's
+theme selection and transition law, converge the native app overlay toward
+the raised spatial tile and catalog bands, and add measured text layout and
+shaping. The native landscapes remain bounded adapters until the browser's
+ground scenes can expose reusable geometry and material contracts. SPAOS
+continues to own the space and window protocol. The marble pour, memory
+descent, and richer book motions remain later scene-parity work.
 
 For acceptance, capture tty1 and tty2 at the same WorldOS state, ground
 selection, time of day, viewport, and camera pose. Check book/well placement,
