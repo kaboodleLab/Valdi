@@ -271,7 +271,9 @@ async function render() {
   homeRoot.add(jarShadow);
   const homeHole = createNativeHomeHoleScene({ THREE, root: homeRoot,
     tileGeometry, tileMaterial, tileH: core.TILE.H });
-  let holeOpen = globalThis.__nativeWorldHoleOpen === true;
+  // Browser WorldOS Skip enters the settled OS with the jar poured into the
+  // floor. A false test prefix keeps the jar for before/after comparisons.
+  let holeOpen = globalThis.__nativeWorldHoleOpen !== false;
   let currentJarCell = null;
   let refractDirty = true;
   let lastRefractFrame = -24;
@@ -957,10 +959,11 @@ async function render() {
       jarPresent && !holeOpen;
     jarShadow.visible = jarRig.tiltGroup.visible;
     jarLamp.visible = jarRig.tiltGroup.visible;
-    homeHole.set(jarX || 0, jarZ || 0, jarPresent && holeOpen);
+    const aperture = homeHole.set(jarX || 0, jarZ || 0,
+      { active: jarPresent && holeOpen, openT: 1 });
     uniforms.uHoleCell.value.set(jarPresent ? jarX : 9999,
       jarPresent ? jarZ : 9999);
-    uniforms.uHoleOpenT.value = jarPresent && holeOpen ? 1 : 0;
+    uniforms.uHoleOpenT.value = aperture;
     if (jarPresent) {
       jarRig.tiltGroup.position.set(jarX, landedJarPose.y + nativeGroundOffset, jarZ);
       jarShadow.position.set(jarX, landedJarPose.shadowY + nativeGroundOffset, jarZ);
@@ -1257,9 +1260,10 @@ async function render() {
           holeOpen = !holeOpen;
           jarRig.tiltGroup.visible = tileByName.get('jar').visible = !holeOpen;
           jarShadow.visible = jarLamp.visible = !holeOpen;
-          homeHole.set(cx, cz, holeOpen);
+          const aperture = homeHole.set(cx, cz,
+            { active: holeOpen, openT: 1 });
           uniforms.uHoleCell.value.set(cx, cz);
-          uniforms.uHoleOpenT.value = holeOpen ? 1 : 0;
+          uniforms.uHoleOpenT.value = aperture;
           applyJarLamp();
           refractDirty = true;
           __webgpuSurfaceStage(`WorldOS Home hole ${holeOpen ? 'opened' : 'closed'} at (${cx},${cz})`);

@@ -87,9 +87,11 @@ the grid shader and a local point light, both seated on the native tile datum.
 The default glass uses a Three physical material; prefixing the bundle with
 `globalThis.__nativeWorldJarMaterial='authored';` selects WorldOS's shared
 `world-jar-materials.js` glass shader through its `home-material.js` graphics adapter.
-The Home hole uses WorldOS's `world-hole-bell.js` profile and geometry with a
-native cut tile and throat. Clicking the jar tile opens or closes this local
-visual state; the browser's memory passage is not yet part of the native scene.
+The Home hole uses WorldOS's `world-hole-bell.js` profile and geometry and
+`world-home-hole-appearance.js` aperture rule with a native cut tile and throat.
+Native Home starts with the settled hole open, matching browser WorldOS Skip.
+Clicking its tile toggles the jar for visual comparison; the browser's memory
+passage is not yet part of the native scene.
 That mode captures the background at half resolution and refreshes it on
 scene/camera changes and at least every 24 frames while people wander. It is
 currently slower on the Linux test GPU; see `PARITY.md` for measurements and
@@ -201,6 +203,8 @@ outside `WORLD_SCENE_ROOT`, set `WORLD_JAR_MATERIALS_SOURCE` and
 `world-daylight.js`; set `WORLD_DAYLIGHT_SOURCE` when it is staged separately.
 The builder also imports `world-hole-bell.js`; set `WORLD_HOLE_BELL_SOURCE`
 when that leaf is staged separately.
+It imports `world-home-hole-appearance.js` as well; set
+`WORLD_HOME_HOLE_APPEARANCE_SOURCE` when staging that leaf separately.
 The shell bundle also reads the sibling SPAOS shell protocol
 source so its version matches the compositor. If the scene was staged without
 that sibling tree, set `SPAOS_SHELL_PROTOCOL_SOURCE` to the matching

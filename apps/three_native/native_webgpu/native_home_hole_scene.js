@@ -1,5 +1,7 @@
 import { WORLD_HOLE_BELL, createWorldHoleBellGeometry }
   from '@worldos/world-hole-bell';
+import { worldHomeHoleAperture, worldHomeHoleVisible }
+  from '@worldos/world-home-hole-appearance';
 
 // Native's tile adapter cuts the shared mouth out of the authored tile top.
 // The bell profile, rim normals and depth shade come from browser WorldOS.
@@ -73,9 +75,11 @@ export function createNativeHomeHoleScene({ THREE, root, tileGeometry,
   root.add(group);
   return {
     group, ring,
-    set(x, z, visible) {
+    set(x, z, appearance) {
+      const aperture = worldHomeHoleAperture(appearance);
       group.position.set(x, 0, z);
-      group.visible = visible;
+      group.visible = worldHomeHoleVisible(aperture);
+      return aperture;
     },
     dispose() {
       root.remove(group);

@@ -17,7 +17,7 @@ an empty space releases it immediately because there is no preview to await.
 | Grid material and tile geometry | WorldOS `native-grid-scene.js`; consumed by the native bundle. |
 | Home camera, occupancy fit, and jar rig | WorldOS `world-home-composition.js`; both browser and native consume its camera basis, Home framing law, jar profile, tilt/spin hierarchy, landed jar/contact-shadow pose and night-lamp law. Native People-on-Home adds vertical actor bounds to the fit. |
 | Jar glass and contact-shadow shaders | WorldOS `world-jar-materials.js`; browser and native import the same factories. Native scene capture and graphics adaptation are host owned. The native authored glass path is opt-in while its cost and full-scene color match are evaluated. |
-| Home hole mouth | WorldOS `world-hole-bell.js` owns the bell profile, analytic rim normals, vertex shade, and geometry in both hosts. Native cuts the same circular aperture through its tile and painted grid, then supplies its own tile material and dark throat. Clicking the native jar tile opens or closes this visual state. |
+| Home hole mouth | WorldOS `world-hole-bell.js` owns the bell profile, analytic rim normals, vertex shade, and geometry in both hosts. `world-home-hole-appearance.js` owns the aperture and visibility rule. Native cuts the same circular aperture through its tile and painted grid, then supplies its own tile material and dark throat. Native Home starts with the settled hole open; its tile toggles the jar for comparison. |
 | Time of day | WorldOS `world-daylight.js` owns the room key palette, position and intensity for both renderers. Native `native_world_sun.mjs` projects the clock into the grid's sun-grade uniforms. The native jar uses the authored warm floor pool and local point light at night. |
 | Character movement and avoidance | WorldOS `character-world.js`; native scene loads the authored character assets. The native frame pump advances Three's animation callbacks so the GPU skeleton palette follows the simulation. |
 | Encyclopedia body and Home pose | WorldOS `world-book-rig.js` owns the Home book group, tilt, rig, shadow, and pose application in both hosts. `world-book-action.js` defines native `book.open` input and pagination. Native Home prints the supplied short article, opens the cover in a focused reading view, and advances pages by click. The browser still has richer article generation, page graphics and physical page flips. |
@@ -32,7 +32,8 @@ an empty space releases it immediately because there is no preview to await.
   has the production bell geometry, but not the browser's marble pour, memory
   passage, underworld, status controls, or bottom chat orb. The native click
   toggle is local transient state; `world.json` does not record whether the
-  browser's live hole is open.
+  browser's live hole is open. Clicking the native mouth does not yet descend
+  into the browser's memory level.
   Native Home can show the shared book body, a focused reading pose, and a
   short printed article from its scene-local `book.open` verb. The native mind
   supplies article prose in the verb arguments; the browser uses its own
@@ -85,9 +86,9 @@ an empty space releases it immediately because there is no preview to await.
 
 ## Next extraction boundary
 
-Carry the shared hole mesh into its state and interaction boundary: the
-browser's pour, aperture, and memory descent still live in the full World
-engine. Converge browser and native book article layout and page motion, then
+Carry the shared aperture into the pour and memory descent interaction; those
+still live in the full browser World engine. Converge browser and native book
+article layout and page motion, then
 bring the chat bar and status controls across. Shared scene leaves own
 geometry and pose while hosts supply materials and route input. SPAOS still
 owns the space and window protocol.
