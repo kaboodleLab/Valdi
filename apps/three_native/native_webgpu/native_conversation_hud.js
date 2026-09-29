@@ -1,6 +1,6 @@
 // Camera-fixed typed conversation for Hermes. The agent and SPAOS own the
 // conversation and actions; this layer only presents input and returned text.
-import { wrapNativeReply } from './native_conversation_wrap.mjs';
+import { wrapNativeReply, wrapNativeReplyMeasured } from './native_conversation_wrap.mjs';
 
 export function createNativeConversationHud({ THREE, scene, camera, makeText, onSubmit }) {
   const root = new THREE.Group();
@@ -34,7 +34,22 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
     labels.push({ mesh, texture });
   }
   const rowLimit = () => Math.max(16, Math.floor((panelWidth() - 50) / 12.5));
-  const answerRows = () => wrapNativeReply(answer, rowLimit());
+  const answerRows = () => typeof makeText.measure === 'function' ?
+    wrapNativeReplyMeasured(answer, panelWidth() - 36,
+      value => makeText.measure(value, 17)) : wrapNativeReply(answer, rowLimit());
+  function inputTail(value) {
+    if (typeof makeText.measure !== 'function')
+      return value.slice(-Math.max(18, Math.floor((panelWidth() - 45) / 8.5)));
+    const letters = [...value];
+    let low = 0, high = letters.length;
+    while (low < high) {
+      const middle = Math.floor((low + high) / 2);
+      if (makeText.measure(letters.slice(middle).join(''), 15) <= panelWidth() - 72)
+        high = middle;
+      else low = middle + 1;
+    }
+    return letters.slice(low).join('');
+  }
   function redraw() {
     for (const { mesh, texture } of labels) {
       root.remove(mesh); texture.dispose(); mesh.material.dispose(); mesh.geometry.dispose();
@@ -53,7 +68,7 @@ export function createNativeConversationHud({ THREE, scene, camera, makeText, on
         left + panel - 178, panelTop() + 17, 11, [183, 187, 192]);
     rows.slice(start, start + 3).forEach((row, index) =>
       addLabel(row, left, panelTop() + 37 + index * 17, 17, [242, 241, 237]));
-    const input = text ? text.slice(-Math.max(18, Math.floor((panel - 45) / 8.5))) :
+    const input = text ? inputTail(text) :
       (focus ? 'Type a message…' : 'Click here to ask');
     addLabel(`${focus ? '> ' : ''}${input}${focus ? '_' : ''}`, left,
       panelTop() + 88, 15, text ? [255, 255, 255] : [185, 187, 192]);

@@ -119,8 +119,30 @@ function nativeTextTexture(THREE, text, color) {
 export function createNativeText(THREE, manifest, readAsset) {
   const font = manifest.font ? { entry: manifest.font,
     pixels: new Uint8Array(readAsset(manifest.font.file)) } : null;
-  return (value, color) => typeof globalThis.__nativeRasterizeText === 'function' ?
+  const draw = (value, color) => typeof globalThis.__nativeRasterizeText === 'function' ?
     nativeTextTexture(THREE, value, color) : textTexture(THREE, value, color, font);
+  const measured = new Map();
+  draw.measure = (value, size) => {
+    const text = String(value);
+    if (!text) return 0;
+    let ratio = measured.get(text);
+    if (ratio === undefined) {
+      if (typeof globalThis.__nativeMeasureText === 'function') {
+        const letters = [...text];
+        let pixels = 4, height = 1;
+        for (let start = 0; start < letters.length; start += 200) {
+          const metrics = globalThis.__nativeMeasureText(letters.slice(start, start + 200).join(''));
+          pixels += Math.max(0, metrics.width - 4);
+          height = metrics.height;
+        }
+        ratio = pixels / height;
+      } else ratio = [...text].length * .55;
+      if (measured.size >= 512) measured.clear();
+      measured.set(text, ratio);
+    }
+    return ratio * size;
+  };
+  return draw;
 }
 
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,

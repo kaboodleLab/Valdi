@@ -360,7 +360,8 @@ Three textures. Set `WORLD_OS_NATIVE_FONT` to a local font path or place
 `native-font.otf` in `WORLD_OS_NATIVE_ASSETS` to use the authored face; the
 host otherwise tries installed FreeSans or DejaVu Sans. The authored font file
 is not bundled with Valdi. The small uppercase atlas remains a fallback for
-older hosts. Native rasterization currently has basic kerning but does not
+older hosts. The native chat measures glyph advances to wrap replies and keep
+input inside its card. Native rasterization has basic kerning but does not
 shape complex scripts or provide color emoji.
 Removed spaces and props release their scene nodes,
 preview textures and labels. The prepared asset directory

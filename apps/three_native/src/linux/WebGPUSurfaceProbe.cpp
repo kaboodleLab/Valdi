@@ -31,6 +31,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <fcntl.h>
@@ -114,6 +115,37 @@ public:
         std::shared_ptr<TextBuffer> alpha;
     };
 
+    std::pair<int, int> measure(std::string_view text) {
+        if (text.size() > 2048) throw std::runtime_error("Native text is too long");
+        constexpr int pixelSize = 48;
+        if (FT_Set_Pixel_Sizes(face_, 0, pixelSize) != 0)
+            throw std::runtime_error("Cannot size WorldOS text face");
+        const int ascent = static_cast<int>(face_->size->metrics.ascender >> 6);
+        const int descent = static_cast<int>(face_->size->metrics.descender >> 6);
+        int pen = 2, right = 1;
+        FT_UInt previous = 0;
+        size_t offset = 0, characters = 0;
+        while (offset < text.size() && characters++ < 256) {
+            uint32_t codepoint = nextCodepoint(text, offset);
+            if (codepoint == '\n' || codepoint == '\r' || codepoint == '\t') codepoint = ' ';
+            FT_UInt index = FT_Get_Char_Index(face_, codepoint);
+            if (!index) index = FT_Get_Char_Index(face_, '?');
+            if (previous && index && FT_HAS_KERNING(face_)) {
+                FT_Vector kern{};
+                if (FT_Get_Kerning(face_, previous, index, FT_KERNING_DEFAULT, &kern) == 0)
+                    pen += static_cast<int>(kern.x >> 6);
+            }
+            if (FT_Load_Glyph(face_, index, FT_LOAD_RENDER) != 0)
+                throw std::runtime_error("Cannot measure WorldOS text glyph");
+            right = std::max(right, pen + face_->glyph->bitmap_left +
+                static_cast<int>(face_->glyph->bitmap.width));
+            pen += static_cast<int>(face_->glyph->advance.x >> 6);
+            previous = index;
+        }
+        return {std::clamp(std::max(pen, right) + 2, 1, 8192),
+            std::clamp(ascent - descent + 4, 1, 128)};
+    }
+
     Bitmap rasterize(std::string_view text) {
         if (text.size() > 2048) throw std::runtime_error("Native text is too long");
         constexpr int pixelSize = 48;
@@ -132,14 +164,7 @@ public:
         size_t offset = 0;
         size_t characters = 0;
         while (offset < text.size() && characters++ < 256) {
-            const uint8_t lead = static_cast<uint8_t>(text[offset++]);
-            uint32_t codepoint = lead;
-            int more = 0;
-            if ((lead & 0xe0) == 0xc0) { codepoint = lead & 0x1f; more = 1; }
-            else if ((lead & 0xf0) == 0xe0) { codepoint = lead & 0x0f; more = 2; }
-            else if ((lead & 0xf8) == 0xf0) { codepoint = lead & 0x07; more = 3; }
-            for (int i = 0; i < more && offset < text.size(); ++i)
-                codepoint = (codepoint << 6) | (static_cast<uint8_t>(text[offset++]) & 0x3f);
+            uint32_t codepoint = nextCodepoint(text, offset);
             if (codepoint == '\n' || codepoint == '\r' || codepoint == '\t') codepoint = ' ';
             FT_UInt index = FT_Get_Char_Index(face_, codepoint);
             if (!index) index = FT_Get_Char_Index(face_, '?');
@@ -184,6 +209,18 @@ public:
     }
 
 private:
+    static uint32_t nextCodepoint(std::string_view text, size_t& offset) {
+        const uint8_t lead = static_cast<uint8_t>(text[offset++]);
+        uint32_t codepoint = lead;
+        int more = 0;
+        if ((lead & 0xe0) == 0xc0) { codepoint = lead & 0x1f; more = 1; }
+        else if ((lead & 0xf0) == 0xe0) { codepoint = lead & 0x0f; more = 2; }
+        else if ((lead & 0xf8) == 0xf0) { codepoint = lead & 0x07; more = 3; }
+        for (int i = 0; i < more && offset < text.size(); ++i)
+            codepoint = (codepoint << 6) | (static_cast<uint8_t>(text[offset++]) & 0x3f);
+        return codepoint;
+    }
+
     FT_Library library_ = nullptr;
     FT_Face face_ = nullptr;
 };
@@ -943,6 +980,23 @@ int main(int argc, char** argv) {
                             }
                         });
                     jsi->global().setProperty(*jsi, "__nativeRasterizeText", std::move(rasterizeText));
+                    auto measureText = facebook::jsi::Function::createFromHostFunction(
+                        *jsi, facebook::jsi::PropNameID::forAscii(*jsi, "__nativeMeasureText"), 1,
+                        [font](facebook::jsi::Runtime& js, const facebook::jsi::Value&,
+                               const facebook::jsi::Value* args, size_t count) -> facebook::jsi::Value {
+                            if (count != 1 || !args[0].isString())
+                                throw facebook::jsi::JSError(js, "Expected native text string");
+                            try {
+                                const auto [width, height] = font->measure(args[0].getString(js).utf8(js));
+                                facebook::jsi::Object result(js);
+                                result.setProperty(js, "width", width);
+                                result.setProperty(js, "height", height);
+                                return result;
+                            } catch (const std::exception& error) {
+                                throw facebook::jsi::JSError(js, error.what());
+                            }
+                        });
+                    jsi->global().setProperty(*jsi, "__nativeMeasureText", std::move(measureText));
                 }
             }
             auto stage = facebook::jsi::Function::createFromHostFunction(

@@ -40,9 +40,9 @@ an empty space releases it immediately because there is no preview to await.
   camera flight, spatial catalog bands, drag/scroll motion, shadows, and
   landing animation. Long names currently shrink to fit their cards.
 - FreeType removes the former all-caps, restricted-glyph presentation for
-  Linux. Native text still lacks complex-script shaping, color emoji, and
-  browser-equivalent line metrics. The chat card's wrapping remains based on
-  character counts rather than measured glyph widths.
+  Linux. The chat card now uses measured glyph widths for reply wrapping and
+  input fitting. Native text still lacks complex-script shaping, color emoji,
+  and browser-equivalent line height and baseline metrics.
 - Home composition differs visibly. The native meadow and jar demonstration
   now shares the production camera basis and Home framing law. Its hole mouth
   has the production bell geometry, but not the browser's marble pour, memory
