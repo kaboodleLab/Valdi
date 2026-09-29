@@ -22,7 +22,8 @@ import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
 import { worldSunGrade } from './native_world_sun.mjs';
 import { solveWorldKeyLight } from '@worldos/world-daylight';
 import { createNativeArrivalReveal } from './native_world_arrival.mjs';
-import { beginReturnFromFloor, canReleaseReturn } from './native_world_return.mjs';
+import { beginReturnFromFloor, canReleaseReturn, returnForLeave, planSceneActionReturn,
+  settleSceneActionReturn } from './native_world_return.mjs';
 
 function nativeIconLoader(name, manifest) {
   const loader = new GLTFLoader();
@@ -298,8 +299,11 @@ async function render() {
   let activeSpace = null;
   // A click can enter a space before the next floor snapshot reaches us.
   let requestedSpace = null;
+  let requestedSpaceAt = -Infinity;
   let previewGenerationBySpace = new Map();
   let returningSpace = null;
+  // A foreground book.open that arrived while World's entry was in flight.
+  let sceneReturn = null;
   let seenRevision = null;
   let seenFloorRevision = null;
   let seenCatalogSignature = null;
@@ -595,8 +599,15 @@ async function render() {
           result: { ok: false, verb: call.verb, error: { code: 'not-found', message: error } } });
         if (sceneActions.has(call.verb)) {
           try {
-            sendAgent({ type: 'result', callId: call.callId,
-              result: openBookRequest(call.args) });
+            const opened = openBookRequest(call.args);
+            const plan = planSceneActionReturn(call, activeSpace, requestedSpace,
+              requestedSpaceAt, performance.now());
+            if (plan.pending) {
+              sceneReturn = plan.pending;
+              __webgpuSurfaceStage(`WorldOS book.open waits to return from space ${plan.pending.space}`);
+            }
+            if (plan.leaveNow) leaveForWorld('WorldOS book.open asked SPAOS to show World');
+            sendAgent({ type: 'result', callId: call.callId, result: opened });
           } catch (error) {
             sendAgent({ type: 'result', callId: call.callId, result: {
               ok: false, verb: call.verb, error: { code: 'invalid-args',
@@ -896,6 +907,13 @@ async function render() {
       if (!currentFloorObjects.has(id)) removeFloorLabel(id);
     }
     if (activeSpace !== null && activeSpace === requestedSpace) requestedSpace = null;
+    if (sceneReturn) {
+      const settled = settleSceneActionReturn(sceneReturn, activeSpace, performance.now());
+      const space = sceneReturn.space;
+      sceneReturn = settled.pending;
+      if (settled.leave)
+        leaveForWorld(`WorldOS book.open asked SPAOS to return from space ${space}`);
+    }
     for (const { name } of homeIcons) {
       const cells = positions.get(name) || [];
       for (const cell of cells) nextAppAtCell.set(`${cell[0]},${cell[1]}`, name);
@@ -1070,22 +1088,23 @@ async function render() {
   const jarRadiansPerMs = .004 * 38 / 1000;
   let waveX = 0, waveZ = 0, waveStart = animationStart;
   globalThis.__nativeStop = () => { stopped = true; };
+  // SPAOS's World-only leave returns to space 0 without closing anything; the
+  // departing space lingers until its newer preview is on the native tile.
+  function leaveForWorld(stage) {
+    if (typeof __nativeWorldLeave !== 'function' || !__nativeWorldLeave()) return false;
+    returningSpace = returnForLeave(activeSpace ?? requestedSpace,
+      previewGenerationBySpace, cardBySpace) ?? returningSpace;
+    requestedSpace = null;
+    __webgpuSurfaceStage(stage);
+    return true;
+  }
   globalThis.__worldBack = () => {
     if (conversation.blur()) return;
     if (hud.isOpen()) { hud.close(); return; }
     if (hud.hasPeoplePanel()) { hud.closePeoplePanel(); return; }
     if (people.isOpen()) { setPeopleOpen(false); return; }
     if (homeBook.focused) { frameBook(false); return; }
-    if (typeof __nativeWorldLeave === 'function' && __nativeWorldLeave()) {
-      const leavingSpace = activeSpace ?? requestedSpace;
-      if (leavingSpace !== null) returningSpace = {
-        id: leavingSpace,
-        generation: Math.max(previewGenerationBySpace.get(leavingSpace) || 0,
-          cardBySpace.get(leavingSpace)?.generation || 0),
-      };
-      requestedSpace = null;
-      __webgpuSurfaceStage('WorldOS asked SPAOS to leave the current space');
-    }
+    leaveForWorld('WorldOS asked SPAOS to leave the current space');
   };
   globalThis.__worldResize = (width, height) => {
     if (!Number.isInteger(width) || !Number.isInteger(height) ||
@@ -1222,6 +1241,8 @@ async function render() {
         if (spaceAtCell.has(cellKey) && typeof __nativeWorldEnter === 'function') {
           if (__nativeWorldEnter(cx, cz)) {
             requestedSpace = spaceAtCell.get(cellKey);
+            requestedSpaceAt = performance.now();
+            sceneReturn = null;
             __webgpuSurfaceStage(`WorldOS asked SPAOS to enter (${cx},${cz})`);
           }
         } else {

@@ -322,6 +322,17 @@ cover. The WorldOS-owned `book.open` scene action accepts a subject, short
 article and optional tile. Native World advertises that action to its mind only
 when SPAOS has no app or Shell verb with the same name. A live mind can write
 the article in the action arguments; the action prints it on the book pages.
+When a person's own `book.open` succeeds while an app space covers World, the
+renderer sends SPAOS's World-only `leave`, the same door as Back. The app keeps
+its space and windows, which linger until the newer preview is on their tile.
+If World has asked to enter a space that the floor has not yet reported,
+leaving at once could lose to that enter, so the renderer remembers that one
+space and leaves when the floor reports it entered. The intent lasts five
+seconds from the enter request and is dropped when another space becomes
+active or the person picks a new tile. If the floor still names the space
+World left before that pick, the renderer leaves at once as well, and later
+snapshots naming that older space do not cancel the wait. A call carrying a `taskId` never moves
+the person.
 
 The asset preparation step decodes the available WorldOS app-icon GLBs, while
 the runtime loads an icon only when a live space or saved app prop needs it.
