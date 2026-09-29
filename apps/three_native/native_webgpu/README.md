@@ -87,6 +87,9 @@ the grid shader and a local point light, both seated on the native tile datum.
 The default glass uses a Three physical material; prefixing the bundle with
 `globalThis.__nativeWorldJarMaterial='authored';` selects WorldOS's shared
 `world-jar-materials.js` glass shader through its `home-material.js` graphics adapter.
+The Home hole uses WorldOS's `world-hole-bell.js` profile and geometry with a
+native cut tile and throat. Clicking the jar tile opens or closes this local
+visual state; the browser's memory passage is not yet part of the native scene.
 That mode captures the background at half resolution and refreshes it on
 scene/camera changes and at least every 24 frames while people wander. It is
 currently slower on the Linux test GPU; see `PARITY.md` for measurements and
@@ -196,6 +199,8 @@ that scene factory has not landed in SPAOS main. The builder imports WorldOS
 outside `WORLD_SCENE_ROOT`, set `WORLD_JAR_MATERIALS_SOURCE` and
 `WORLD_HOME_MATERIAL_SOURCE` to their paths. The builder also imports
 `world-daylight.js`; set `WORLD_DAYLIGHT_SOURCE` when it is staged separately.
+The builder also imports `world-hole-bell.js`; set `WORLD_HOLE_BELL_SOURCE`
+when that leaf is staged separately.
 The shell bundle also reads the sibling SPAOS shell protocol
 source so its version matches the compositor. If the scene was staged without
 that sibling tree, set `SPAOS_SHELL_PROTOCOL_SOURCE` to the matching
@@ -352,6 +357,7 @@ GLB (about 53 MiB) can load when needed.
   WorldOS prop placement. The native scene never writes either authority.
 - WorldOS's shared `native-grid-scene.js` owns the grid material and tile
   geometry; `world-home-composition.js` owns the camera fit and jar rig;
+  `world-hole-bell.js` owns the Home hole mouth;
   `world-book-rig.js` and `world-book-action.js` own Home book construction,
   pose and action content. New
   prop and lighting work should move through similarly

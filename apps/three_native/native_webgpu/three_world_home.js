@@ -12,6 +12,7 @@ import { createNativeShellHud, createNativeText } from './native_shell_hud.js';
 import { createNativeConversationHud } from './native_conversation_hud.js';
 import { createNativeMeadowScene } from './native_meadow_scene.js';
 import { createNativeHomeBookScene } from './native_home_book_scene.js';
+import { createNativeHomeHoleScene } from './native_home_hole_scene.js';
 import { WORLD_BOOK_OPEN_ACTION, parseWorldBookOpen }
   from '@worldos/world-book-action';
 import { createNativePeopleScene } from './native_people_scene.js';
@@ -268,6 +269,10 @@ async function render() {
   jarShadow.scale.set(landedJarPose.shadowScale, landedJarPose.shadowScale, 1);
   jarShadow.position.set(1, landedJarPose.shadowY + nativeGroundOffset, 0);
   homeRoot.add(jarShadow);
+  const homeHole = createNativeHomeHoleScene({ THREE, root: homeRoot,
+    tileGeometry, tileMaterial, tileH: core.TILE.H });
+  let holeOpen = globalThis.__nativeWorldHoleOpen === true;
+  let currentJarCell = null;
   let refractDirty = true;
   let lastRefractFrame = -24;
   const refractCameraPosition = new THREE.Vector3();
@@ -946,11 +951,17 @@ async function render() {
         Number.isInteger(p.tz)) || null);
     const jarX = Array.isArray(jarCell) ? jarCell[0] : jarCell?.tx;
     const jarZ = Array.isArray(jarCell) ? jarCell[1] : jarCell?.tz;
+    const jarPresent = Number.isInteger(jarX) && Number.isInteger(jarZ);
+    currentJarCell = jarPresent ? { x: jarX, z: jarZ } : null;
     jarRig.tiltGroup.visible = tileByName.get('jar').visible =
-      Number.isInteger(jarX) && Number.isInteger(jarZ);
+      jarPresent && !holeOpen;
     jarShadow.visible = jarRig.tiltGroup.visible;
     jarLamp.visible = jarRig.tiltGroup.visible;
-    if (jarRig.tiltGroup.visible) {
+    homeHole.set(jarX || 0, jarZ || 0, jarPresent && holeOpen);
+    uniforms.uHoleCell.value.set(jarPresent ? jarX : 9999,
+      jarPresent ? jarZ : 9999);
+    uniforms.uHoleOpenT.value = jarPresent && holeOpen ? 1 : 0;
+    if (jarPresent) {
       jarRig.tiltGroup.position.set(jarX, landedJarPose.y + nativeGroundOffset, jarZ);
       jarShadow.position.set(jarX, landedJarPose.shadowY + nativeGroundOffset, jarZ);
       jarLamp.position.set(jarX, core.TILE.H + .30, jarZ);
@@ -978,7 +989,7 @@ async function render() {
       if (prop?.kind === 'spaos' && Number.isInteger(prop.tx) &&
           Number.isInteger(prop.tz)) includeCell(prop.tx, prop.tz);
     }
-    if (jarRig.tiltGroup.visible) includeCell(jarX, jarZ);
+    if (jarPresent) includeCell(jarX, jarZ);
     if (homeBook.tile) {
       includeCell(homeBook.tile.x, homeBook.tile.z);
       nextOccupiedCells.add(`${homeBook.tile.x},${homeBook.tile.z}`);
@@ -1028,10 +1039,10 @@ async function render() {
       if (meadow.setOccupiedCells(nextOccupiedCells))
         __webgpuSurfaceStage(`WorldOS meadow cleared ${nextOccupiedCells.size} floor cells; ` +
           `${meadow.stats().blades} blades remain`);
-      if (jarRig.tiltGroup.visible) meadow.setHole(jarX, jarZ);
+      if (jarPresent) meadow.setHole(jarX, jarZ);
     }
     if (snapshotChanged)
-      __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jarRig.tiltGroup.visible)} app cells, jar ${jarRig.tiltGroup.visible}`);
+      __webgpuSurfaceStage(`WorldOS live state rev ${state.rev ?? 'none'}, floor ${floorRevision ?? 'none'}: ${allCells.length - Number(jarPresent)} app cells, jar ${jarPresent}, hole ${jarPresent && holeOpen}`);
     if (snapshotChanged) refractDirty = true;
   }
 
@@ -1228,16 +1239,32 @@ async function render() {
     // published after the renderer's first frame.
     const tileHit = clicked ? raycaster.intersectObjects([
       ...tileByName.values(), ...floorTileByFloorObject.values(),
+      homeHole.ring,
       ...[...extraByName.values()].flatMap(entries => entries.map(entry => entry.tile)),
-    ].filter(tile => tile.visible), false)[0] : null;
+    ].filter(tile => tile.visible &&
+      (tile !== homeHole.ring || homeHole.group.visible)), false)[0] : null;
     if (tileHit || raycaster.ray.intersectPlane(floor, hit)) {
-      const cx = Math.round(tileHit ? tileHit.object.position.x : hit.x);
-      const cz = Math.round(tileHit ? tileHit.object.position.z : hit.z);
+      const tilePosition = tileHit?.object === homeHole.ring ? currentJarCell :
+        tileHit?.object.position;
+      const cx = Math.round(tilePosition ? tilePosition.x : hit.x);
+      const cz = Math.round(tilePosition ? tilePosition.z : hit.z);
       uniforms.uHoverCell.value.set(cx, cz);
       uniforms.uHasHover.value = 1;
       if (clicked) {
         waveX = cx; waveZ = cz; waveStart = performance.now();
         const cellKey = `${cx},${cz}`;
+        if (currentJarCell && cx === currentJarCell.x && cz === currentJarCell.z) {
+          holeOpen = !holeOpen;
+          jarRig.tiltGroup.visible = tileByName.get('jar').visible = !holeOpen;
+          jarShadow.visible = jarLamp.visible = !holeOpen;
+          homeHole.set(cx, cz, holeOpen);
+          uniforms.uHoleCell.value.set(cx, cz);
+          uniforms.uHoleOpenT.value = holeOpen ? 1 : 0;
+          applyJarLamp();
+          refractDirty = true;
+          __webgpuSurfaceStage(`WorldOS Home hole ${holeOpen ? 'opened' : 'closed'} at (${cx},${cz})`);
+          return;
+        }
         if (spaceAtCell.has(cellKey) && typeof __nativeWorldEnter === 'function') {
           if (__nativeWorldEnter(cx, cz)) {
             requestedSpace = spaceAtCell.get(cellKey);
