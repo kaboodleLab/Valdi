@@ -407,6 +407,8 @@ async function render() {
       people.faceCamera();
     },
   });
+  const peopleOnHome = globalThis.__nativeWorldPeopleOnHome !== false;
+  let livePeopleOnHome = false;
   let peopleSource = 'sample';
   let rosterSignature = '';
   function pollPeopleRoster() {
@@ -419,6 +421,9 @@ async function render() {
     const signature = rows === null ? 'sample' : JSON.stringify(rows);
     if (signature === rosterSignature) return;
     rosterSignature = signature;
+    const showLiveOnHome = peopleOnHome && rows !== null && rows.length > 0;
+    livePeopleOnHome = showLiveOnHome;
+    if (!showLiveOnHome) people.showOnHome(false);
     if (rows === null) {
       peopleSource = 'sample';
       people.useSample();
@@ -426,9 +431,10 @@ async function render() {
       peopleSource = 'live';
       people.setPeople(rows);
     }
+    if (showLiveOnHome) people.showOnHome(true);
     hud.setPeopleRows(people.rows(), peopleSource === 'sample');
     hud.setView(people.isOpen() ? 'people' : 'home', peopleSource === 'sample');
-    if (globalThis.__nativeWorldPeopleOnHome === true && !cameraManuallyPlaced)
+    if (peopleOnHome && !cameraManuallyPlaced)
       seenRevision = null;
     refractDirty = true;
     __webgpuSurfaceStage(`WorldOS People source: ${peopleSource}${rows ? ` (${rows.length} present)` : ''}`);
@@ -467,7 +473,7 @@ async function render() {
   const hud = createNativeShellHud({ THREE, scene, camera, manifest,
     readAsset: name => __nativeReadAsset(name),
     makeText,
-    allowHomePeoplePanel: globalThis.__nativeWorldPeopleOnHome === true,
+    allowHomePeoplePanel: peopleOnHome,
     stage: message => __webgpuSurfaceStage(message),
     onBack: () => globalThis.__worldBack(),
     onPeople: () => {
@@ -641,9 +647,8 @@ async function render() {
       }
     }
   }
-  if (globalThis.__nativeWorldStartView === 'people' ||
-      globalThis.__nativeWorldPeopleOnHome === true) pollPeopleRoster();
-  if (globalThis.__nativeWorldPeopleOnHome === true) people.showOnHome(true);
+  if (globalThis.__nativeWorldStartView === 'people' || peopleOnHome)
+    pollPeopleRoster();
   if (globalThis.__nativeWorldStartView === 'people') setPeopleOpen(true);
   function isCell(value) {
     return Array.isArray(value) && value.length === 2 &&
@@ -999,7 +1004,7 @@ async function render() {
     }
     if (allCells.length && !cameraManuallyPlaced) {
       const frameItems = allCells.map(([x, z]) => ({ x, z }));
-      if (globalThis.__nativeWorldPeopleOnHome === true) {
+      if (livePeopleOnHome) {
         for (const person of people.rows()) {
           if (Number.isFinite(person.x) && Number.isFinite(person.z))
             frameItems.push({ x: person.x, z: person.z,
@@ -1009,7 +1014,7 @@ async function render() {
       const homeFrame = solveWorldHomeFrame(frameItems, {
         az: Math.PI / 4, el: THREE.MathUtils.degToRad(40),
         aspect: surfaceWidth / surfaceHeight,
-        verticalFit: globalThis.__nativeWorldPeopleOnHome === true, aimY: center.y,
+        verticalFit: livePeopleOnHome, aimY: center.y,
       });
       center.set(homeFrame.x, .35, homeFrame.z);
       homeExtent = WORLD_HOME.orthoSize / homeFrame.zoom;
@@ -1227,7 +1232,7 @@ async function render() {
       }
       return;
     }
-    if (clicked && globalThis.__nativeWorldPeopleOnHome === true) {
+    if (clicked && livePeopleOnHome) {
       const person = people.pick(raycaster) ||
         people.pickScreen(x, y, surfaceWidth, surfaceHeight);
       if (person) {

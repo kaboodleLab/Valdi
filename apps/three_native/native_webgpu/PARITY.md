@@ -66,10 +66,18 @@ an empty space releases it immediately because there is no preview to await.
   also has flight animation, tray behavior, furniture interactions, and other
   overlays. The native renderer currently reveals mapped windows immediately
   because it has no flight animation. SPAOS deadlines remain in force.
-- The native People card and launcher work; the live roster on this test
-  machine currently reports zero members, so the authored sample population
-  appears. Presence must remain sourced from the authenticated roster when it
-  has members, with no fabricated live status.
+- The native People card and launcher work. Home uses authenticated roster
+  identities and shows the local person even when network presence is off;
+  remote people appear only when the roster reports them online. The authored
+  sample population remains confined to the People card when live roster data
+  is unavailable. Native wandering checks the camera projection, as the browser
+  World does, so a framed person does not stroll offscreen. Cold model loading
+  and avatar frame cost still need work.
+- In the live 1440×900 tty2 Home with one authenticated avatar, an active-VT
+  20-second run logged 120 presented frames about every two seconds. That is
+  frame cadence, not a GPU completion or input-latency measurement. The
+  inactive VT logs substantially fewer frames, so it is not a valid proxy for
+  the displayed session.
 - In earlier isolated 1600×900 Linux compositor runs with meadow and 11 sample
   avatars, the corrected shared frame kept every avatar visible. Settled
   120-frame intervals ranged from 28.06–34.15 ms p50 and 34.32–40.14 ms p95

@@ -28,3 +28,11 @@ test('connecting roster keeps the local person without inventing remote presence
   assert.deepEqual(rows.map(row => [row.id, row.name, row.model]),
     [['me', 'Me', 'person-will']]);
 });
+
+test('disabled presence still shows self without claiming remote people are present', () => {
+  const rows = projectPeopleRoster({ type: 'roster', status: { state: 'online', name: 'off' },
+    self: { id: 'me', name: 'Local', character: 'will' },
+    members: [{ id: 'other', name: 'Other', character: 'matt' }] });
+  assert.deepEqual(rows.map(row => [row.id, row.name, row.model]),
+    [['me', 'Me', 'person-will']]);
+});

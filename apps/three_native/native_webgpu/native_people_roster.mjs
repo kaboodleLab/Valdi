@@ -23,9 +23,9 @@ function slotFor(id, used) {
 
 export function projectPeopleRoster(snapshot) {
   if (snapshot?.type !== 'roster' || !Array.isArray(snapshot.members)) return null;
-  if (snapshot.status?.name === 'off') return null;
   const members = new Map();
-  const present = snapshot.status?.state === 'online' ? snapshot.members : [];
+  const present = snapshot.status?.state === 'online' && snapshot.status?.name !== 'off'
+    ? snapshot.members : [];
   for (const person of [...present, snapshot.self]) {
     if (typeof person?.id !== 'string' || !person.id || person.id.length > 64) continue;
     members.set(person.id, person);
@@ -40,5 +40,6 @@ export function projectPeopleRoster(snapshot) {
       String(person.name || 'Someone').slice(0, 80),
     model: `person-${BODIES.has(slug) ? slug : 'worker'}`, ...slot });
   }
+  if (snapshot.status?.name === 'off' && rows.length === 0) return null;
   return rows;
 }

@@ -133,11 +133,13 @@ The grid remains the default for an unprefixed bundle. A meadow-only tty2 run
 at 2880×1800 measured steady frame interval p50 16.6 ms and p95 17.3–17.6 ms
 across several 120-frame windows. The isolated
 SPAOS mind-call test and a live typed Hermes reply passed with that scene.
-An additional `globalThis.__nativeWorldPeopleOnHome = true` prefix draws the
-WorldOS character simulation over that home floor, with feet following the
-meadow height, readable name labels, and a click that opens the People card
-over the same scene. Back closes the card before leaving the World.
-This uses the authored sample team until an authenticated live roster arrives.
+The native Home draws people from a fresh authenticated roster, including the
+local person while network presence is off. Feet follow the meadow height,
+small name badges face the camera above each person, and clicking one opens the
+People card over the same scene. Back closes the card before leaving the World.
+Home does not draw the authored sample team when the roster is unavailable;
+the People card can still use that sample for its isolated demo. Set
+`globalThis.__nativeWorldPeopleOnHome = false` to disable Home people.
 Before the animation-frame fix, the combined scene on tty2 measured interval
 p50 about 22 ms and p95 about 25 ms with 11 visible people and full grass
 detail, but its GPU skeletons were frozen. With animated skeletons, settled

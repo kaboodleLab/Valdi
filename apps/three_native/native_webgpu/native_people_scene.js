@@ -131,13 +131,13 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     const ink = person ? [224, 228, 230] : dark ? [71, 73, 75] : [77, 79, 80];
     const { texture, width, height } = makeText(value, ink);
     const label = new THREE.Group();
-    const size = .15;
+    const size = person ? .09 : .15;
     const w = Math.min(.95, size * width / height);
     const plate = new THREE.Mesh(new THREE.CircleGeometry(.5, 32),
       new THREE.MeshBasicMaterial({ color: person ? 0x181b20 : 0xffffff,
         transparent: true, opacity: person ? .78 : dark ? .82 : .66,
         depthTest: !person, depthWrite: false, toneMapped: false }));
-    plate.scale.set(w + .18, size + .075, 1);
+    plate.scale.set(w + (person ? .1 : .18), size + (person ? .045 : .075), 1);
     const letters = new THREE.Mesh(new THREE.PlaneGeometry(w, size),
       new THREE.MeshBasicMaterial({ map: texture, transparent: true,
         depthTest: !person, depthWrite: false, toneMapped: false }));
@@ -266,7 +266,7 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
           group.position.set(state.x, y, state.z);
           group.scale.setScalar(open ? 1 : .85);
           group.rotation.y = state.heading;
-          actor.label.position.set(state.x, y + (open ? .045 : .13), state.z + .42);
+          actor.label.position.set(state.x, y + (open ? 1.35 : 1.16), state.z);
           group.visible = actor.label.visible = state.alpha > .03;
           const next = state.speed > .02 ? walk : idle;
           if (next !== action) {
@@ -291,13 +291,22 @@ export function createNativePeopleScene({ THREE, scene, camera, tileGeometry,
     visualQueue = pending.then(() => {}, () => {});
     return pending;
   }
+  const viewPoint = new THREE.Vector3();
   const world = createCharacterWorld({
     createVisual,
     getObstacles: () => [{ x: -.15, z: -.18, half: .65 },
       { x: .25, z: 1.35, half: .65 }],
     getVisibility: () => open || homeVisible ? 1 : 0,
     canMove: () => open || homeVisible,
-    withinView: point => Math.abs(point.x) < 4.8 && Math.abs(point.z) < 3.3,
+    withinView: point => {
+      // Match the browser World's camera-space stroll bounds. A fixed world
+      // rectangle lets people walk off a reframed Home while still "in view".
+      camera.updateMatrixWorld();
+      viewPoint.set(point.x, groundHeight(point.x, point.z) + .3, point.z)
+        .project(camera);
+      return Math.abs(viewPoint.x) < .8 && Math.abs(viewPoint.y) < .73 &&
+        Math.abs(viewPoint.z) < 1;
+    },
   });
   function setPeople(rows, { sample = false } = {}) {
     source = sample ? 'sample' : 'live';
