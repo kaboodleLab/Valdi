@@ -1207,6 +1207,22 @@ cc_library(
     ],
 )
 
+# Optional Linux desktop window host. Its SDL2 dependency is supplied by the
+# target Linux system; headless Valdi Linux binaries do not link SDL2.
+cc_library(
+    name = "valdi_linux_sdl_host",
+    srcs = ["src/valdi/linux_sdl/LinuxSDLMain.cpp"],
+    hdrs = ["src/valdi/linux_sdl/LinuxSDLMain.hpp"],
+    linkopts = ["-lSDL2"],
+    strip_include_prefix = "src",
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":valdi_linux",
+        ":valdi_standalone_runtime",
+    ],
+)
+
 # C API for desktop modules to self-register (include from C++ without Obj-C).
 cc_library(
     name = "valdi_desktop_module_init_api",

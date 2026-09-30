@@ -1,0 +1,11 @@
+load("//bzl/valdi:valdi_android_library.bzl", "valdi_android_library")
+
+valdi_android_library(
+    name = "three_native_android",
+    srcs = glob(["**/*.kt"]),
+    visibility = ["//visibility:public"],
+    deps = [
+        "//valdi:valdi_android_support",
+        "@android_mvn//:androidx_annotation_annotation",
+    ],
+)

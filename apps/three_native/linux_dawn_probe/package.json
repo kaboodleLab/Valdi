@@ -1,0 +1,20 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "render": "node run.mjs",
+    "live": "node run.mjs --stream | ./viewer",
+    "direct": "node direct.mjs --world-glass --readback-test",
+    "world-scene": "node direct.mjs --world-scene --readback-test",
+    "patch-gpu-lifetime": "node patch-kmamal-gpu-lifetime.mjs",
+    "build-patched-gpu": "sh build-patched-gpu.sh",
+    "build-patched-sdl": "sh build-patched-sdl.sh"
+  },
+  "dependencies": {
+    "@kmamal/gpu": "0.2.0",
+    "@kmamal/sdl": "0.11.13",
+    "sharp": "0.34.5",
+    "three": "0.186.0",
+    "webgpu": "0.6.1"
+  }
+}

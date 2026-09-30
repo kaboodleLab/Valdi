@@ -1,0 +1,22 @@
+load("//bzl/valdi:valdi_module.bzl", "valdi_module")
+
+valdi_module(
+    name = "three_native",
+    srcs = glob([
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "src/**/*.js",
+        "src/**/*.bin",
+    ]) + ["tsconfig.json"],
+    android_class_path = "com.snap.valdi.modules.three_native",
+    android_deps = ["//apps/three_native/src/android:three_native_android"],
+    android_output_target = "release",
+    compilation_mode = "js",
+    inline_assets = True,
+    ios_output_target = "release",
+    visibility = ["//visibility:public"],
+    deps = [
+        "//src/valdi_modules/src/valdi/valdi_core",
+        "//src/valdi_modules/src/valdi/valdi_tsx",
+    ],
+)

@@ -1,0 +1,58 @@
+--- a/src/native/window.cpp
++++ b/src/native/window.cpp
+@@ -1,6 +1,7 @@
+ #include "window.h"
+ #include <SDL.h>
+ #include <SDL_syswm.h>
++#include <cstdint>
+ #include <string>
+ #include <sstream>
+ #include <map>
+@@ -18,8 +19,10 @@
+ 	#define NativeWindowHandle Window
+ 	#define GL_NativeWindow Window
+ 	struct GPU_NativeData {
+-		Display *display;
+-		Window window;
++		std::uint32_t backend; // 1 = X11, 2 = Wayland; matches Dawn's NativeData
++		std::uint32_t reserved;
++		void *display;
++		std::uintptr_t window;
+ 	};
+ 	#define GPU_WINDOW_FLAG SDL_WINDOW_VULKAN
+ #elif defined(__WIN32__)
+@@ -191,7 +194,9 @@
+ 	if (has_wm_info) {
+ 		NativeWindowHandle _native_handle;
+ 		#if defined(__LINUX__)
+-			_native_handle = sys_wm_info.info.x11.window;
++			_native_handle = sys_wm_info.subsystem == SDL_SYSWM_WAYLAND
++				? reinterpret_cast<NativeWindowHandle>(sys_wm_info.info.wl.surface)
++				: sys_wm_info.info.x11.window;
+ 		#elif defined(__WIN32__)
+ 			_native_handle = sys_wm_info.info.win.window;
+ 		#elif defined(__MACOSX__)
+@@ -230,10 +235,20 @@
+ 			throw Napi::Error::New(env, message.str());
+ 		}
+ 
+-		GPU_NativeData native_gpu;
++		GPU_NativeData native_gpu = {};
+ 		#if defined(__LINUX__)
+-			native_gpu.display = sys_wm_info.info.x11.display;
+-			native_gpu.window = sys_wm_info.info.x11.window;
++			if (sys_wm_info.subsystem == SDL_SYSWM_X11) {
++				native_gpu.backend = 1;
++				native_gpu.display = sys_wm_info.info.x11.display;
++				native_gpu.window = sys_wm_info.info.x11.window;
++			} else if (sys_wm_info.subsystem == SDL_SYSWM_WAYLAND) {
++				native_gpu.backend = 2;
++				native_gpu.display = sys_wm_info.info.wl.display;
++				native_gpu.window = reinterpret_cast<std::uintptr_t>(sys_wm_info.info.wl.surface);
++			} else {
++				SDL_DestroyWindow(window);
++				throw Napi::Error::New(env, "WebGPU requires an X11 or Wayland SDL window");
++			}
+ 		#elif defined(__WIN32__)
+ 			native_gpu.hwnd = sys_wm_info.info.win.window;
+ 			native_gpu.hinstance = sys_wm_info.info.win.hinstance;

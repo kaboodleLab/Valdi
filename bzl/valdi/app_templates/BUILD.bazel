@@ -9,4 +9,5 @@ exports_files([
     "cli_main.cpp.tpl",
     "cli_main_http.cpp.tpl",
     "linux_main.cpp.tpl",
+    "linux_sdl_main.cpp.tpl",
 ])
