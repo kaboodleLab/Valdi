@@ -210,8 +210,9 @@ outside `WORLD_SCENE_ROOT`, set `WORLD_JAR_MATERIALS_SOURCE` and
 `world-daylight.js`; set `WORLD_DAYLIGHT_SOURCE` when it is staged separately.
 The native launcher also consumes WorldOS's pure `spatial-launcher-motion.js`
 at bundle time; set `WORLD_SPATIAL_LAUNCHER_MOTION_SOURCE` when that leaf is
-staged separately. The native HUD uses its tile spring and pose while SPAOS
-continues to own the app catalog and launch request.
+staged separately. The native HUD uses its tile spring, pose and catalog bands;
+the World scene adapts its camera target and turn to the orthographic lens.
+SPAOS continues to own the app catalog and launch request.
 The builder also imports `world-hole-bell.js`; set `WORLD_HOLE_BELL_SOURCE`
 when that leaf is staged separately.
 It imports `world-home-hole-appearance.js` as well; set
@@ -323,17 +324,19 @@ spaos-compositor --new-window \
   --world-command /path/to/Valdi/apps/three_native/native_webgpu/run_spaos_world.sh
 ```
 
-The native World scene reads SPAOS's app catalog and draws a camera-fixed
-clock, Back button, theme selector, and app catalog over the Three scene. Back
-and launcher use WorldOS's authored control artwork. Clicking free ground opens
-the catalog for that exact tile; the launcher button finds nearby free ground.
-The catalog shows the prepared WorldOS GLB miniatures when available and a
-text badge otherwise. Its responsive grid pages through the authenticated
-catalog; arrow keys move the selection and Enter opens it. A pick rechecks
-occupancy before asking SPAOS to open the app. Typing while the catalog is open
-filters SPAOS's authenticated apps by name or key;
-Backspace edits the search. A search with no matches shows an empty result.
-Clicking an
+The native World scene reads SPAOS's app catalog and draws camera-fixed
+clock, Back, and theme controls over the Three scene. Back and launcher use
+WorldOS's authored control artwork. Clicking free ground raises the catalog
+from that cell; the launcher button finds nearby free ground. A rounded tile
+is parented to the World scene while the camera flies toward it, and its
+catalog uses the browser's South Park, World OS, and Native app bands. SPAOS's
+authenticated `world` flag currently populates South Park and Native; World OS
+needs explicit category metadata. The catalog shows prepared WorldOS GLB
+miniatures when available and a text badge otherwise. Its grid pages through
+the authenticated catalog; arrow keys move the selection and Enter opens it.
+A pick rechecks occupancy before asking SPAOS to open the app. Typing while
+the catalog is open filters authenticated apps by name or key; Backspace edits
+the search. A search with no matches shows an empty result. Clicking an
 occupied floor tile enters its space. Escape or Back leaves the active space;
 after leaving, the renderer waits for a newer preview before releasing SPAOS's
 departing window. With the launcher closed, the wheel zooms, arrow keys pan,
@@ -517,8 +520,9 @@ floor, previews, Back, clock, catalog, and five-choice theme selector. The
 Rolling meadow uses the native adapter for WorldOS's terrain and grass math;
 Desert dunes, Tropical island, and Lunar surface have simpler native terrain
 adapters. Theme choices are session-local. The browser's animated globe picker,
-scene transitions, scenery detail, and raised 3D app launcher remain separate
-parity work. Production jar shading is available as an opt-in path. Full chat
+scene transitions, scenery detail, and browser-accurate spatial catalog
+scrolling remain separate parity work. Production jar shading is available as
+an opt-in path. Full chat
 presentation, voice, notifications and app surfaces also remain separate work.
 
 ### Native SPAOS Shell capability slice

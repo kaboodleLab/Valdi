@@ -3,7 +3,8 @@
 // small camera-fixed layer draws text into RGBA textures and uses the real
 // WorldOS control artwork prepared alongside the GLBs.
 import { WORLD_THEMES, worldTheme } from './native_world_themes.mjs';
-import { createFlight, tilePose, TILE_SIDE, SPATIAL_TURN }
+import { launcherBand, sortLauncherApps } from './native_launcher_catalog.mjs';
+import { catalogLayout, createFlight, tilePose, SPATIAL_TURN }
   from '@worldos/spatial-launcher-motion';
 const GLYPHS = {
   ' ': [0, 0, 0, 0, 0, 0, 0],
@@ -150,16 +151,17 @@ export function createNativeText(THREE, manifest, readAsset) {
 export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset,
   onBack, onPeople, onBook, onOpen, onSelectPerson, onFindPerson, onPausePeople,
   allowHomePeoplePanel = false, iconForApp, initialTheme = 'classic', onTheme,
-  onLauncherVisible, stage,
+  onLauncherVisible, chooseLauncherTile, groundHeight = 0, stage,
   makeText = createNativeText(THREE, manifest, readAsset) }) {
   const root = new THREE.Group();
   camera.add(root);
   scene.add(camera);
   const launcherGroup = new THREE.Group();
   launcherGroup.visible = false;
-  root.add(launcherGroup);
+  scene.add(launcherGroup);
   const launcherFlight = createFlight();
   let pendingLaunch = null;
+  let pendingControl = null;
   const rows = [];
   const appCards = [];
   const appIcons = [];
@@ -171,20 +173,24 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   let units = 1;
   let open = false;
   let selectedTile = null;
+  let launcherCell = null;
   let selectedApp = 0;
   let page = 0;
+  let pageCount = 1;
+  let catalog = { cells: [], sections: [] };
+  const visibleCardHits = [];
   let minute = -1;
   let clock = null;
   let columns = 5;
   let pageRows = 3;
-  let pageSize = columns * pageRows;
   let panelWidth = 820;
   let panelHeight = 486;
   let panelLeft = 0;
   let panelTop = 0;
   let cardWidth = 0;
   const cardHeight = 108;
-  const cardPitchY = 120;
+  let cardPitchY = 140;
+  let cardStartY = 0;
   let view = 'home';
   let themeOpen = false;
   let themeIndex = Math.max(0, WORLD_THEMES.findIndex(theme =>
@@ -221,7 +227,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     root.add(mesh);
     return mesh;
   }
-  function roundedTile(w, h, color, opacity, order) {
+  function roundedShape() {
     const r = .035;
     const shape = new THREE.Shape();
     shape.moveTo(-.5 + r, -.5);
@@ -233,7 +239,10 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     shape.quadraticCurveTo(-.5, .5, -.5, .5 - r);
     shape.lineTo(-.5, -.5 + r);
     shape.quadraticCurveTo(-.5, -.5, -.5 + r, -.5);
-    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(shape),
+    return shape;
+  }
+  function roundedTile(w, h, color, opacity, order) {
+    const mesh = new THREE.Mesh(new THREE.ShapeGeometry(roundedShape()),
       solid(color, opacity));
     mesh.scale.set(w * units, h * units, 1);
     mesh.renderOrder = order;
@@ -292,11 +301,16 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   const bookText = label('Book', 0, 0, 12, [50, 49, 54], 'center');
   const peopleMark = label('Sample people', 0, 0, 10, [86, 84, 82], 'center');
   peopleMark.visible = false;
-  const tileShadow = roundedTile(panelWidth + 34, panelHeight + 34,
-    0x151714, .38, 998);
-  const tileBody = roundedTile(panelWidth, panelHeight,
-    0xb3ada3, .98, 999);
-  launcherGroup.add(tileShadow, tileBody);
+  const tileShadow = roundedTile(1, 1, 0x151714, .10, 5);
+  scene.add(tileShadow);
+  tileShadow.rotation.x = -Math.PI / 2;
+  tileShadow.material.depthTest = true;
+  tileShadow.visible = false;
+  const tileBody = new THREE.Mesh(new THREE.ExtrudeGeometry(roundedShape(),
+    { depth: 1, bevelEnabled: false, curveSegments: 8 }),
+    solid(0xb3ada3, .98));
+  tileBody.renderOrder = 999;
+  launcherGroup.add(tileBody);
   const panel = roundedTile(panelWidth, panelHeight, 0xf8f5f2, .98, 1001);
   const selectionPlate = plane(1, cardHeight,
     solid(0xdce6f0, .97), 1006);
@@ -411,6 +425,7 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   }
 
   function redrawRows() {
+    visibleCardHits.length = 0;
     while (rows.length) removeLabel(rows.pop());
     while (appCards.length) removeLabel(appCards.pop());
     while (appIcons.length) {
@@ -427,46 +442,56 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     removeLabel(searchMark);
     removeLabel(pageMark);
     const displayed = open || launcherGroup.visible;
-    columns = width < 620 ? 2 : width < 900 ? 3 : 5;
-    pageRows = height < 850 ? 2 : 3;
-    pageSize = columns * pageRows;
-    panelWidth = Math.min(width - 56, columns === 2 ? 500 :
-      columns === 3 ? 660 : 820);
-    const count = Math.max(1, Math.ceil(apps.length / pageSize));
-    page = Math.max(0, Math.min(page, count - 1));
-    const shown = Math.min(pageSize, Math.max(0, apps.length - page * pageSize));
-    panelHeight = 110 + Math.max(1, Math.ceil(shown / columns)) * cardPitchY + 40;
+    columns = 5;
+    panelWidth = Math.max(280, Math.min(width - 56, height - 48, 820));
+    panelHeight = panelWidth;
+    pageRows = panelHeight < 620 ? 1 : panelHeight < 820 ? 2 : 4;
+    catalog = catalogLayout(apps.map((_, index) => index), apps, true);
+    pageCount = Math.max(1,
+      Math.floor((catalog.cells.at(-1)?.row || 0) / pageRows) + 1);
+    page = Math.max(0, Math.min(page, pageCount - 1));
     panelLeft = (width - panelWidth) / 2;
-    panelTop = Math.max(75, (height - panelHeight) / 2 - 18);
+    panelTop = Math.max(24, (height - panelHeight) / 2);
+    cardPitchY = (panelHeight - 310) / pageRows;
+    cardStartY = panelTop + 138;
     const gap = 14;
     cardWidth = (panelWidth - 56 - (columns - 1) * gap) / columns;
     const pitchX = cardWidth + gap;
     panel.scale.set(panelWidth * units, panelHeight * units, 1);
-    tileShadow.scale.set((panelWidth + 34) * units,
-      (panelHeight + 34) * units, 1);
-    tileBody.scale.set(panelWidth * units, panelHeight * units, 1);
+    tileBody.scale.set(panelWidth * units * .98,
+      panelHeight * units * .98, 1);
     selectionPlate.scale.set((cardWidth + 2) * units, (cardHeight + 2) * units, 1);
     place(panel, width / 2, panelTop + panelHeight / 2);
-    place(tileShadow, width / 2 + 13, panelTop + panelHeight / 2 + 32);
-    tileShadow.position.z = -1.13;
-    place(tileBody, width / 2, panelTop + panelHeight / 2 + 15);
-    tileBody.position.z = -1.075;
+    place(tileBody, width / 2, panelTop + panelHeight / 2);
     header = label('Apps', panelLeft + 28, panelTop + 34, 27);
     searchMark = label(query ? `Search: ${query}` : 'Search apps…',
       panelLeft + 28, panelTop + 72, 16, [103, 101, 99]);
     launcherGroup.add(header, searchMark);
     header.visible = searchMark.visible = displayed;
-    pageMark = label(`${page + 1} / ${count}    Prev  ·  Next`,
+    pageMark = label(`${page + 1} / ${pageCount}    Prev  ·  Next`,
       panelLeft + panelWidth - 180, panelTop + panelHeight - 22, 14);
     launcherGroup.add(pageMark);
-    pageMark.visible = displayed && count > 1;
-    for (let index = 0; index < pageSize; ++index) {
-      const app = apps[page * pageSize + index];
-      if (!app) break;
-      const column = index % columns;
-      const row = Math.floor(index / columns);
+    pageMark.visible = displayed && pageCount > 1;
+    const pageStart = page * pageRows;
+    for (const section of catalog.sections) {
+      if (section.row < pageStart || section.row >= pageStart + pageRows) continue;
+      const heading = label(section.name, panelLeft + 28,
+        cardStartY - 25 + (section.row - pageStart) * cardPitchY,
+        14, [92, 87, 81]);
+      launcherGroup.add(heading);
+      heading.visible = displayed;
+      rows.push(heading);
+    }
+    for (const cell of catalog.cells) {
+      if (cell.row < pageStart || cell.row >= pageStart + pageRows) continue;
+      const app = apps[cell.index];
+      const column = cell.slot % columns;
+      const row = cell.row - pageStart;
       const centerX = panelLeft + 28 + cardWidth / 2 + column * pitchX;
-      const centerY = panelTop + 108 + cardHeight / 2 + row * cardPitchY;
+      const centerY = cardStartY + cardHeight / 2 + row * cardPitchY;
+      visibleCardHits.push({ index: cell.index,
+        left: centerX - cardWidth / 2, right: centerX + cardWidth / 2,
+        top: centerY - cardHeight / 2, bottom: centerY + cardHeight / 2 });
       const card = plane(cardWidth, cardHeight, solid(0xffffff, .79), 1004);
       place(card, centerX, centerY);
       launcherGroup.add(card);
@@ -521,14 +546,14 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       empty.visible = displayed;
       rows.push(empty);
     }
-    const selectedRow = selectedApp - page * pageSize;
-    selectionPlate.visible = displayed && apps.length > 0 &&
-      selectedRow >= 0 && selectedRow < pageSize;
+    const selectedCell = catalog.cells.find(cell => cell.index === selectedApp);
+    const selectedRow = selectedCell ? selectedCell.row - pageStart : -1;
+    selectionPlate.visible = displayed && selectedRow >= 0 &&
+      selectedRow < pageRows;
     if (selectionPlate.visible) {
-      const column = selectedRow % columns;
-      const row = Math.floor(selectedRow / columns);
+      const column = selectedCell.slot % columns;
       place(selectionPlate, panelLeft + 28 + cardWidth / 2 + column * pitchX,
-        panelTop + 108 + cardHeight / 2 + row * cardPitchY);
+        cardStartY + cardHeight / 2 + selectedRow * cardPitchY);
     }
   }
   function resize(nextWidth, nextHeight, extent) {
@@ -560,8 +585,15 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     redrawTheme();
   }
   function setApps(next) {
-    allApps = next.filter(app => typeof app.key === 'string' && !app.hidden)
-      .sort((a, b) => appName(a).localeCompare(appName(b)));
+    allApps = sortLauncherApps(next.filter(app =>
+      typeof app.key === 'string' && !app.hidden).map(app => {
+      const band = launcherBand(app);
+      return { ...app, spaosWorldOs: band === 1, spaosNative: band === 2 };
+    }));
+    const bands = [0, 0, 0];
+    for (const app of allApps) ++bands[launcherBand(app)];
+    stage(`WorldOS native launcher bands: South Park ${bands[0]}, ` +
+      `World OS ${bands[1]}, Native ${bands[2]}`);
     apps = allApps.filter(matchesApp);
     selectedApp = Math.min(selectedApp, Math.max(0, apps.length - 1));
     redrawRows();
@@ -587,14 +619,22 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   }
   function show(next) {
     if (next === open) return;
+    if (next) {
+      if (view === 'people') return;
+      const cell = chooseLauncherTile?.(selectedTile);
+      if (!cell) return;
+      launcherCell = cell;
+      selectedTile = cell;
+    }
     open = next;
     if (open) {
       pendingLaunch = null;
+      pendingControl = null;
       query = '';
       apps = allApps;
       page = selectedApp = 0;
       launcherGroup.visible = true;
-      onLauncherVisible?.(true);
+      onLauncherVisible?.(true, launcherCell);
       redrawRows();
       panel.visible = true;
     } else selectedTile = null;
@@ -611,23 +651,36 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     const progress = launcherFlight.advance(open, Math.min(.1, Math.max(0, dt)));
     if (!open && launcherFlight.settled) {
       launcherGroup.visible = false;
+      tileShadow.visible = false;
       onLauncherVisible?.(false);
+      launcherCell = null;
       query = '';
       apps = allApps;
       page = selectedApp = 0;
       redrawRows();
       const launch = pendingLaunch;
+      const control = pendingControl;
       pendingLaunch = null;
+      pendingControl = null;
       if (launch) onOpen(launch.key, launch.tile);
+      else control?.();
       return;
     }
-    const travel = Math.max(0, Math.min(1, progress));
     const tile = tilePose(progress);
-    launcherGroup.scale.setScalar(tile.side / TILE_SIDE);
-    launcherGroup.position.set((width / 2 - 46) * units * (1 - travel),
-      -(height / 2 - 46) * units * (1 - travel), 0);
-    launcherGroup.rotation.set(-.32 * travel,
-      SPATIAL_TURN * .55 * (1 - travel), -.09 * travel);
+    const scale = tile.side / (panelWidth * units);
+    launcherGroup.scale.setScalar(scale);
+    launcherGroup.rotation.set(-Math.PI / 2,
+      SPATIAL_TURN * tile.turn, 0, 'YXZ');
+    const panelOffset = panel.position.clone().multiplyScalar(scale)
+      .applyQuaternion(launcherGroup.quaternion);
+    launcherGroup.position.set(launcherCell.x, groundHeight + tile.lift,
+      launcherCell.z).sub(panelOffset);
+    tileBody.scale.z = .24 * tile.thickness / scale;
+    tileBody.position.z = panel.position.z - tileBody.scale.z;
+    tileShadow.visible = progress > .01;
+    tileShadow.scale.set(tile.side * 1.03, tile.side * 1.03, 1);
+    tileShadow.rotation.y = SPATIAL_TURN * tile.turn;
+    tileShadow.position.set(launcherCell.x, groundHeight + .006, launcherCell.z);
   }
   const launcherRay = new THREE.Raycaster();
   const launcherNdc = new THREE.Vector2();
@@ -644,24 +697,42 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
   function pointer(x, y, clicked) {
     if (!clicked) return false;
     if (x >= 18 && x <= 64 && y >= 16 && y <= 64) {
-      if (open) show(false);
-      else onBack();
+      if (launcherGroup.visible) {
+        pendingLaunch = null;
+        show(false);
+      } else onBack();
       return true;
     }
     if (x >= 18 && x <= 74 && y >= height - 74 && y <= height - 18) {
-      if (open) show(false);
+      if (launcherGroup.visible) {
+        pendingLaunch = null;
+        pendingControl = onPeople;
+        show(false);
+        return true;
+      }
       if (themeOpen) showTheme(false);
       onPeople?.();
       return true;
     }
     if (view !== 'people' && x >= 80 && x <= 136 &&
         y >= height - 74 && y <= height - 18) {
+      if (launcherGroup.visible) {
+        pendingLaunch = null;
+        pendingControl = () => showTheme(true);
+        show(false);
+        return true;
+      }
       showTheme(!themeOpen);
       return true;
     }
     if (x >= width - 138 && x <= width - 78 &&
         y >= height - 74 && y <= height - 18) {
-      if (open) show(false);
+      if (launcherGroup.visible) {
+        pendingLaunch = null;
+        pendingControl = onBook;
+        show(false);
+        return true;
+      }
       if (themeOpen) showTheme(false);
       onBook?.();
       return true;
@@ -726,21 +797,16 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       return true;
     }
     const { x: tileX, y: tileY } = hit;
-    const column = Math.floor((tileX - panelLeft - 28) / (cardWidth + 14));
-    const row = Math.floor((tileY - panelTop - 108) / cardPitchY);
-    if (column >= 0 && column < columns && row >= 0 && row < pageRows &&
-        tileY >= panelTop + 108 + row * cardPitchY &&
-        tileY <= panelTop + 108 + row * cardPitchY + cardHeight) {
-      const index = page * pageSize + row * columns + column;
-      const app = apps[index];
-      if (app) {
-        selectedApp = index;
-        selectApp(app);
-      }
-    } else if (tileY >= panelTop + panelHeight - 44 && apps.length > pageSize) {
-      const count = Math.ceil(apps.length / pageSize);
-      page = (page + (tileX < panelLeft + panelWidth - 90 ? -1 : 1) + count) % count;
-      selectedApp = page * pageSize;
+    const card = visibleCardHits.find(card => tileX >= card.left &&
+      tileX <= card.right && tileY >= card.top && tileY <= card.bottom);
+    if (card) {
+      selectedApp = card.index;
+      selectApp(apps[card.index]);
+    } else if (tileY >= panelTop + panelHeight - 44 && pageCount > 1) {
+      page = (page + (tileX < panelLeft + panelWidth - 90 ? -1 : 1) +
+        pageCount) % pageCount;
+      selectedApp = catalog.cells.find(cell =>
+        cell.row >= page * pageRows)?.index ?? 0;
       redrawRows();
     }
     return true;
@@ -777,7 +843,8 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
       const step = kind === 'up' ? -columns : kind === 'down' ? columns :
         kind === 'left' ? -1 : 1;
       if (apps.length) selectedApp = (selectedApp + step + apps.length) % apps.length;
-      page = Math.floor(selectedApp / pageSize);
+      const row = catalog.cells.find(cell => cell.index === selectedApp)?.row || 0;
+      page = Math.floor(row / pageRows);
     } else if (kind === 'home') {
       page = selectedApp = 0;
     } else {
@@ -787,6 +854,18 @@ export function createNativeShellHud({ THREE, scene, camera, manifest, readAsset
     return true;
   }
   return { resize, setApps, tick, frame, pointer, key,
+    setCameraZoom(zoom) { root.scale.setScalar(1 / zoom); },
+    isLauncherActive: () => launcherCell !== null,
+    scroll(amount) {
+      if (!open || pageCount < 2) return false;
+      page = Math.max(0, Math.min(pageCount - 1, page + (amount > 0 ? 1 : -1)));
+      selectedApp = catalog.cells.find(cell =>
+        cell.row >= page * pageRows)?.index ?? selectedApp;
+      redrawRows();
+      return true;
+    },
+    launcherState: () => launcherCell ? { tile: launcherCell,
+      progress: launcherFlight.value } : null,
     close() { if (themeOpen) showTheme(false); else show(false); },
     text(input) {
       if (!open || typeof input !== 'string') return false;

@@ -20,6 +20,9 @@ import { createNativePeopleScene } from './native_people_scene.js';
 import { installNativeThreeFrameBridge } from './native_three_frame_bridge.mjs';
 import { projectPeopleRoster } from './native_people_roster.mjs';
 import { chooseLaunchTile } from './native_world_placement.mjs';
+import { launcherCameraPose } from './native_launcher_camera.mjs';
+import { SPATIAL_TURN, TILE_LIFT, TILE_CONTENT_SCALE }
+  from '@worldos/spatial-launcher-motion';
 import { createNativeWorldLifecycle } from './native_world_lifecycle.mjs';
 import { worldSunGrade } from './native_world_sun.mjs';
 import { solveWorldKeyLight } from '@worldos/world-daylight';
@@ -501,10 +504,41 @@ async function render() {
     hud.setView(open ? 'people' : 'home', peopleSource === 'sample');
     people.faceCamera();
   }
+  let launcherBase = null;
+  let launcherWasManual = false;
   const hud = createNativeShellHud({ THREE, scene, camera, manifest,
     readAsset: name => __nativeReadAsset(name),
     makeText,
-    onLauncherVisible: visible => conversation.setVisible(!visible),
+    groundHeight: core.TILE.H,
+    chooseLauncherTile: preferred => {
+      if (homeBook.focused) frameBook(false);
+      return chooseLaunchTile(preferred, occupiedCells, center);
+    },
+    onLauncherVisible: visible => {
+      conversation.setVisible(!visible);
+      if (visible) {
+        if (launcherBase) return;
+        launcherBase = {
+          position: { x: camera.position.x, y: camera.position.y, z: camera.position.z },
+          target: { x: center.x, y: center.y, z: center.z },
+          zoom: camera.zoom,
+        };
+        launcherWasManual = cameraManuallyPlaced;
+        cameraManuallyPlaced = true;
+      } else if (launcherBase) {
+        camera.position.set(launcherBase.position.x, launcherBase.position.y,
+          launcherBase.position.z);
+        camera.lookAt(launcherBase.target.x, launcherBase.target.y,
+          launcherBase.target.z);
+        camera.zoom = launcherBase.zoom;
+        camera.updateProjectionMatrix();
+        hud.setCameraZoom(camera.zoom);
+        cameraManuallyPlaced = launcherWasManual;
+        if (!cameraManuallyPlaced) seenRevision = null;
+        launcherBase = null;
+        refractDirty = true;
+      }
+    },
     initialTheme: groundTheme,
     onTheme: setGroundTheme,
     iconForApp: app => {
@@ -1198,6 +1232,10 @@ async function render() {
   globalThis.__worldNavigate = (kind, amount = 1) => {
     if (kind === 'restart') { lifecycle.restart(); return; }
     if (hud.key(kind === 'recenter' ? 'home' : kind)) return;
+    if (hud.isLauncherActive()) {
+      if (kind === 'zoom') hud.scroll(amount);
+      return;
+    }
     if (conversation.key(kind)) return;
     if (kind === 'zoom' && conversation.scroll(amount)) return;
     if (people.isOpen()) {
@@ -1360,6 +1398,22 @@ async function render() {
       applyLiveState(frame % 60 === 0);
     if (frame % 60 === 0) hud.tick();
     hud.frame(Math.min(.1, (interval ?? 16) / 1000));
+    const launcher = hud.launcherState();
+    if (launcher && launcherBase) {
+      const pose = launcherCameraPose(launcherBase,
+        { ...launcher.tile, y: core.TILE.H + TILE_LIFT - .3 * TILE_CONTENT_SCALE },
+        launcher.progress, SPATIAL_TURN);
+      camera.position.set(pose.position.x, pose.position.y, pose.position.z);
+      camera.lookAt(pose.target.x, pose.target.y, pose.target.z);
+      camera.zoom = pose.zoom;
+      camera.updateProjectionMatrix();
+      hud.setCameraZoom(camera.zoom);
+      uniforms.uCamPos.value.copy(camera.position);
+      for (const card of cardBySpace.values()) card.mesh.lookAt(camera.position);
+      for (const label of labelByFloorObject.values()) label.mesh.lookAt(camera.position);
+      people.faceCamera();
+      refractDirty = true;
+    }
     uniforms.uWave.value.set(waveX, waveZ,
       ((startedAt - waveStart) * waveUnitsPerMs) % 9.7, .46);
     uniforms.uWaveK.value.set(.42, .1, 1.25, 0);

@@ -34,16 +34,21 @@ an empty space releases it immediately because there is no preview to await.
   adapters. Those three still need the browser's scenery, water, atmospheric
   detail, transitions, and persistence. The selector is a flat native panel
   rather than the browser's spinning globe fan.
-- The native app overlay now pages through a responsive grid and shows the
-  authored GLB miniatures for matching catalog entries. Search and launch use
-  SPAOS's authenticated app keys. Its camera-fixed tile now borrows the
-  browser's spring and tile-pose law, lifts from the launcher button, and
-  settles with a visible side and shadow. Hit testing follows the transformed
-  tile, and app launch waits for the 300 ms close motion. The conversation card
-  clears while the catalog is open. This remains a HUD adaptation: the
-  browser's actual world cell, camera flight, spatial catalog bands,
-  drag/scroll motion, scene shadows, and icon landing are still missing.
-  Long names currently shrink to fit their cards.
+- The native app catalog now sits on the selected free world cell; the launcher
+  button chooses one nearby. Its rounded slab grows and lifts with the browser's
+  shared spring and tile pose. The World scene flies its orthographic camera
+  toward that cell using the shared turn and target-height law, then restores
+  the captured Home view on dismissal. SPAOS's authenticated `world` flag
+  separates its South Park apps from host Native apps; the catalog uses the
+  browser's band layout and shows prepared GLB miniatures where available.
+  Its World OS band needs explicit category metadata before it can be populated.
+  Search, page selection, transformed hit testing, and app launch from the
+  chosen cell work on tty2. SPAOS still validates the app key and destination;
+  handoff waits for the 300 ms close motion. The conversation card clears while
+  the catalog is open. This is still an adaptation: the browser uses a
+  perspective lens, continuous spatial scrolling, content masking, authored
+  tile shader and shadows, and icon landing. Native paging and a simple ground
+  shadow stand in for those effects. Long names shrink to fit their cards.
 - FreeType removes the former all-caps, restricted-glyph presentation for
   Linux. The chat card now uses measured glyph widths for reply wrapping and
   input fitting. Native text still lacks complex-script shaping, color emoji,
@@ -116,9 +121,10 @@ an empty space releases it immediately because there is no preview to await.
 ## Next extraction boundary
 
 Prioritize the shell surfaces visible on every visit: share the browser's
-theme selection and transition law, move the native app overlay from its
-camera-fixed tile to the real world cell and catalog bands, and add measured
-text layout and shaping. The native landscapes remain bounded adapters until the browser's
+theme selection and transition law, refine the world-cell launcher with
+continuous spatial scrolling, masking and landing, and add measured text layout
+and shaping. Profile the camera flight and catalog before raising scene detail.
+The native landscapes remain bounded adapters until the browser's
 ground scenes can expose reusable geometry and material contracts. SPAOS
 continues to own the space and window protocol. The marble pour, memory
 descent, and richer book motions remain later scene-parity work.
