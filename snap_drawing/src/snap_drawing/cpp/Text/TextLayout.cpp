@@ -9,6 +9,8 @@
 #include "snap_drawing/cpp/Utils/JSONUtils.hpp"
 
 #include "valdi_core/cpp/Utils/ValueArray.hpp"
+#include <cmath>
+#include <limits>
 
 namespace snap::drawing {
 
@@ -27,12 +29,12 @@ TextLayout::TextLayout(Size maxSize,
                        std::vector<TextLayoutEntry>&& entries,
                        std::vector<TextLayoutVisualEntry>&& visualEntries,
                        std::vector<TextLayoutAttachment>&& attachments,
-                       bool fitsInMaxSize)
+                       bool fitsInMaxSize, std::vector<TextCaretSpan>&& caretSpans)
     : _maxSize(maxSize),
       _fitsInMaxSize(fitsInMaxSize),
       _entries(std::move(entries)),
       _visualEntries(std::move(visualEntries)),
-      _attachments(std::move(attachments)) {
+      _attachments(std::move(attachments)), _caretSpans(std::move(caretSpans)) {
     _bounds = Rect::makeEmpty();
 
     for (const auto& entry : _entries) {
@@ -41,6 +43,38 @@ TextLayout::TextLayout(Size maxSize,
 }
 
 TextLayout::~TextLayout() = default;
+
+std::optional<Rect> TextLayout::caretAtUTF16(size_t offset) const {
+    // Downstream affinity at a wrap or bidi boundary: prefer the next cluster's leading edge.
+    for (const auto& span : _caretSpans) { if (span.start == offset) { return span.leading; } }
+    for (const auto& span : _caretSpans) { if (span.end == offset) { return span.trailing; } }
+    for (const auto& span : _caretSpans) {
+        if (span.start < offset && offset < span.end) {
+            // Ligature interior: split the cluster's advance; caller supplies grapheme-safe offsets.
+            auto t = static_cast<Scalar>(offset - span.start) / (span.end - span.start);
+            return Rect::makeXYWH(span.leading.x() + (span.trailing.x() - span.leading.x()) * t,
+                span.leading.y(), 1, span.leading.height());
+        }
+    }
+    return std::nullopt;
+}
+
+size_t TextLayout::closestCaretUTF16(Point point) const {
+    size_t best = 0;
+    Scalar distance = std::numeric_limits<Scalar>::max();
+    for (const auto& span : _caretSpans) {
+        auto dx = span.trailing.x() - span.leading.x();
+        auto t = dx == 0 ? 0.0f : std::clamp((point.x - span.leading.x()) / dx, 0.0f, 1.0f);
+        auto x = span.leading.x() + dx * t;
+        auto dy = std::max({span.leading.y() - point.y, point.y - span.leading.y() - span.leading.height(), 0.0f});
+        auto score = dy * 1000000 + std::abs(point.x - x);
+        if (score < distance) {
+            distance = score;
+            best = span.start + static_cast<size_t>(std::round((span.end - span.start) * t));
+        }
+    }
+    return best;
+}
 
 const std::vector<TextLayoutEntry>& TextLayout::getEntries() const {
     return _entries;

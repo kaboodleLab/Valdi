@@ -275,6 +275,8 @@ private:
     std::vector<TextLayoutBuilderEntry> _entries;
     // The combined shaped glyphs from all the shape calls
     std::vector<ShapedGlyph> _glyphs;
+    struct CaretBreak { size_t character; Point position; Scalar height; };
+    std::vector<CaretBreak> _caretBreaks;
     // The resolved segments, there will be one segment per
     // directional run, resolved font, line number and decoration
     std::vector<TextLayoutBuilderSegment> _segments;

@@ -42,6 +42,11 @@ export class NoteModel {
     }
     this.insert('', before);
   }
+  place(offset: number, extend: boolean): void {
+    const points = this.boundaries(this.text);
+    this.cursor = points.reduce((best, p) => Math.abs(p - offset) < Math.abs(best - offset) ? p : best, 0);
+    if (!extend) { this.anchor = this.cursor; }
+  }
   selectAll(): void { this.anchor = 0; this.cursor = this.text.length; }
   home(extend: boolean): void { this.cursor = 0; if (!extend) { this.anchor = 0; } }
   endOfDocument(extend: boolean): void { this.cursor = this.text.length; if (!extend) { this.anchor = this.cursor; } }

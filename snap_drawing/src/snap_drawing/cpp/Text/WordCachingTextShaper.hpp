@@ -67,13 +67,13 @@ private:
                    bool isRightToLeft,
                    Scalar letterSpacing,
                    TextScript script,
-                   std::vector<ShapedGlyph>& out);
+                   std::vector<ShapedGlyph>& out, size_t characterOffset);
 
     ShapedGlyph getSpaceGlyphForFont(FontId fontId, Font& font);
 
     Ref<Font> getUniformFont(const Ref<Typeface>& typeface);
 
-    static void copyGlyphs(const ShapedGlyph* glyphs, size_t length, std::vector<ShapedGlyph>& out);
+    static void copyGlyphs(const ShapedGlyph* glyphs, size_t length, std::vector<ShapedGlyph>& out, size_t characterOffset);
 };
 
 } // namespace snap::drawing

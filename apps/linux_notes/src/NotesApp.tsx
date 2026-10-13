@@ -1,10 +1,12 @@
 import { StatefulComponent } from 'valdi_core/src/Component';
 import { UnicodeString } from 'coreutils/src/unicode/UnicodeString';
 import { AttributedTextBuilder } from 'valdi_core/src/utils/AttributedTextBuilder';
+import { PresentationDescription } from 'valdi_core/src/Presentation';
 import { NoteModel } from './NoteModel';
 
-interface Input { type: string; text: string; ctrl: boolean; shift: boolean; }
+interface Input { type: string; text: string; ctrl: boolean; shift: boolean; index?: number; }
 interface DesktopContext {
+  publishContent(description: PresentationDescription): void;
   subscribeInput(handler: (event: Input) => void): void;
   readDocument(): string;
   saveDocument(text: string): boolean;
@@ -39,14 +41,29 @@ export class NotesApp extends StatefulComponent<{}, State, DesktopContext> {
     this.publish();
   }
   onDestroy(): void { this.context.subscribeInput(() => {}); }
-  private publish(): void { this.context.publishState(this.model.snapshot()); }
+  private publish(): void {
+    this.context.publishState(this.model.snapshot());
+    let preview = this.model.text.slice(0, 4096);
+    const last = preview.charCodeAt(preview.length - 1);
+    if (last >= 0xd800 && last <= 0xdbff) { preview = preview.slice(0, -1); }
+    this.context.publishContent({nodes: [
+      {key: 'notes.toolbar', parent: 'root', layer: 'note-header', role: 'group', label: 'Notes toolbar'},
+      {key: 'notes.save', parent: 'notes.toolbar', layer: 'save-note', role: 'button', label: 'Save note'},
+      {key: 'notes.editor', parent: 'root', layer: 'note-editor', role: 'group', label: 'Note editor'},
+      {key: 'notes.text', parent: 'notes.editor', layer: 'note-editor', clipLayer: 'note-editor', role: 'text-input', label: 'Note',
+        focused: true, text: {length: this.model.text.length, anchor: this.model.anchor, cursor: this.model.cursor, preview}},
+      {key: 'notes.status', parent: 'root', layer: 'note-status', role: 'status', label: this.state.status},
+    ]});
+  }
   private save = (): void => {
     const saved = this.context.saveDocument(this.model.text);
     if (saved) { this.savedText = this.model.text; }
     this.setState({ status: saved ? 'Saved locally' : 'Save unavailable' });
+    this.publish();
   };
   private input(event: Input): void {
     if (event.type === 'composition') { this.setState({composition: event.text}); return; }
+    if (event.type === 'pointer' && event.index !== undefined) { this.model.place(event.index, event.shift); }
     if (event.type === 'text') { this.model.insert(event.text); }
     if (event.type === 'key') {
       const key = event.text.toLowerCase();
@@ -77,19 +94,18 @@ export class NotesApp extends StatefulComponent<{}, State, DesktopContext> {
         }
       }
     }
-    this.publish();
     this.setState({revision: this.state.revision + 1, status: this.model.text === this.savedText ? 'Saved locally' : 'Unsaved changes', composition: ''});
+    this.publish();
   }
   onRender(): void {
     const text = this.model.text;
-    const preview = new AttributedTextBuilder()
+    const preview = this.model.start === this.model.end ? text : new AttributedTextBuilder()
       .append(text.slice(0, this.model.start))
-      .append(this.model.selectedText || '│', this.model.selectedText ?
-        {backgroundColor: '#345e81', color: '#ffffff'} : {color: '#8ac3e5'})
+      .append(this.model.selectedText, {backgroundColor: '#345e81', color: '#ffffff'})
       .append(text.slice(this.model.end))
       .build();
     <view backgroundColor='#101419' width='100%' height='100%' flexDirection='column'>
-      <view padding={24} flexDirection='row' alignItems='center' backgroundColor='#1b232c'>
+      <view accessibilityId='note-header' padding={24} flexDirection='row' alignItems='center' backgroundColor='#1b232c'>
         <view flexGrow={1}>
           <label value='Notes' font='FreeSans-Bold 25' color='#f0f5fa' />
           <label value='Local notes · Linux prototype' font='FreeSans 13' color='#9caab9' marginTop={6} />
@@ -99,12 +115,12 @@ export class NotesApp extends StatefulComponent<{}, State, DesktopContext> {
         </view>
       </view>
       <scroll flexGrow={1} width='100%' padding={28} backgroundColor='#101419' accessibilityId='note-editor'>
-        <label value={preview} font='FreeSans 20' color='#e0e8ee' width='100%' numberOfLines={0} />
+        <label accessibilityId='note-text' value={preview} font='FreeSans 20' color='#e0e8ee' width='100%' numberOfLines={0} />
         {this.state.composition ? <label value={`Composing: ${this.state.composition}`} color='#8ac3e5' font='FreeSans 16' /> : undefined}
         {!text ? <label value='Start typing. Your note stays on this machine.' color='#7e8b99' font='FreeSans 16' marginTop={16} /> : undefined}
       </scroll>
       <view padding={14} backgroundColor='#1b232c' flexDirection='row'>
-        <label value={this.state.status} font='FreeSans 13' color='#9ad8ae' flexGrow={1} />
+        <label accessibilityId='note-status' value={this.state.status} font='FreeSans 13' color='#9ad8ae' flexGrow={1} />
         <label value={`${UnicodeString.fromString(text).countGraphemeClusters()} characters · Ctrl+A select · Ctrl+Z undo`} font='FreeSans 12' color='#9caab9' />
       </view>
     </view>;

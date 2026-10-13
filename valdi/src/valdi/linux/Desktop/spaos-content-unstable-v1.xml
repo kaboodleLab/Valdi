@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<protocol name="spaos_content_unstable_v1">
+  <copyright>Copyright 2026 SPAOS contributors. MIT license.</copyright>
+  <interface name="zspaos_content_manager_v1" version="1">
+    <description summary="experimental semantics for an owned painted surface">
+      A bounded, untrusted semantic tree alongside pixels. Identity comes from the Wayland
+      connection. This interface grants no operations, input provenance, camera or other apps.
+      Anonymous clients may describe only their own mapped surface. This is experimental.
+    </description>
+    <request name="destroy" type="destructor"/>
+    <request name="get_content">
+      <arg name="id" type="new_id" interface="zspaos_content_v1"/>
+      <arg name="surface" type="object" interface="wl_surface"/>
+    </request>
+  </interface>
+  <interface name="zspaos_content_v1" version="1">
+    <description summary="replace an owned surface's semantic snapshot">
+      One live content object per surface. Submit is a complete replacement, bounded to 61440
+      UTF-8 bytes, with a strictly increasing sequence and the last accepted revision (initially
+      zero). Acceptance changes scene metadata; it does not prove pixels were presented.
+      The application coalesces unsent snapshots while awaiting a reply. Use wp_presentation
+      for surface presentation and wl_buffer.release for buffer lifetime. No buffer crosses here.
+    </description>
+    <request name="destroy" type="destructor"/>
+    <request name="submit">
+      <arg name="sequence" type="uint"/>
+      <arg name="expected_revision" type="uint"/>
+      <arg name="snapshot" type="string"/>
+    </request>
+    <event name="accepted"><arg name="sequence" type="uint"/><arg name="revision" type="uint"/></event>
+    <event name="rejected">
+      <arg name="sequence" type="uint"/><arg name="revision" type="uint"/>
+      <arg name="reason" type="string"/>
+    </event>
+  </interface>
+</protocol>

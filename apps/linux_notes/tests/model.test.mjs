@@ -15,3 +15,10 @@ model.home(false); model.erase(-1); assert.equal(model.text, 'مرحبا');
 model.endOfDocument(false); model.erase(1); assert.equal(model.text, 'مرحبا');
 model.home(false); model.move(1, true); model.insert('x'); assert.equal(model.text, 'xرحبا');
 console.log('Portable note model: Unicode editing, selection and undo passed');
+
+const pointer = new NoteModel('a👨‍👩‍👧‍👦b', boundaries);
+pointer.place(3, false); assert.equal(pointer.cursor, 1); assert.equal(pointer.anchor, 1);
+pointer.place(pointer.text.length, true); assert.equal(pointer.selectedText, '👨‍👩‍👧‍👦b');
+pointer.place(-10, false); assert.equal(pointer.cursor, 0);
+
+console.log('Note model Unicode, selection, pointer and undo checks passed.');

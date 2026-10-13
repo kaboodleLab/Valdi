@@ -1572,8 +1572,8 @@ filegroup(
 # Linux desktop prototype. Host dependencies are explicit system packages (SDL3 and Fontconfig).
 cc_library(
     name = "valdi_linux_desktop",
-    srcs = glob(["src/valdi/linux/Desktop/**/*.cpp"]),
-    hdrs = glob(["src/valdi/linux/Desktop/**/*.hpp"]),
+    srcs = glob(["src/valdi/linux/Desktop/**/*.cpp"]) + ["spaos-content-protocol.c"],
+    hdrs = glob(["src/valdi/linux/Desktop/**/*.hpp"]) + ["spaos-content-client.h"],
     includes = ["src"],
     copts = COMMON_COMPILE_FLAGS,
     target_compatible_with = ["@platforms//os:linux"],
@@ -1585,4 +1585,15 @@ cc_library(
         "//valdi_core:valdi_core_cc",
         "@valdi_linux_desktop_syslibs//:syslibs",
     ],
+)
+
+# Generated from SPAOS's experimental protocol XML; it carries no executable app operations.
+genrule(
+    name = "linux_content_protocol",
+    srcs = ["src/valdi/linux/Desktop/spaos-content-unstable-v1.xml"],
+    outs = ["spaos-content-client.h", "spaos-content-protocol.c"],
+    tools = ["@valdi_linux_desktop_syslibs//:wayland-scanner"],
+    cmd = "$(location @valdi_linux_desktop_syslibs//:wayland-scanner) client-header $(location src/valdi/linux/Desktop/spaos-content-unstable-v1.xml) $(@D)/spaos-content-client.h && " +
+          "$(location @valdi_linux_desktop_syslibs//:wayland-scanner) private-code $(location src/valdi/linux/Desktop/spaos-content-unstable-v1.xml) $(@D)/spaos-content-protocol.c",
+    target_compatible_with = ["@platforms//os:linux"],
 )

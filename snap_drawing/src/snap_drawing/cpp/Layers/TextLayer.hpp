@@ -57,6 +57,10 @@ public:
     void setTextColor(Color textColor);
     Color getTextColor() const;
 
+    // Logical layer coordinates, using the exact layout that paints this text.
+    std::optional<Rect> caretAtUTF16(size_t offset);
+    size_t closestCaretUTF16(Point point);
+
     void setTextAlign(TextAlign textAlign);
     TextAlign getTextAlign() const;
 

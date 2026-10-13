@@ -76,6 +76,30 @@ TextLayer::TextLayer(const Ref<Resources>& resources) : Layer(resources) {
 
 TextLayer::~TextLayer() = default;
 
+std::optional<Rect> TextLayer::caretAtUTF16(size_t offset) {
+    auto scale = getResources()->getDisplayScale();
+    auto size = Size::make(getFrame().width(), getFrame().height());
+    auto& layout = getTextLayout(size, *getResources());
+    auto caret = layout.caretAtUTF16(offset);
+    if (!caret) {
+        if (offset == 0 && _textFont != nullptr) {
+            auto metrics = _textFont->metrics();
+            return Rect::makeXYWH(0, 0, 1 / scale, metrics.descent - metrics.ascent);
+        }
+        return std::nullopt;
+    }
+    return Rect::makeXYWH(caret->x() / scale, caret->y() / scale + getTextVerticalOffset(size, layout, scale),
+        1 / scale, caret->height() / scale);
+}
+
+size_t TextLayer::closestCaretUTF16(Point point) {
+    auto scale = getResources()->getDisplayScale();
+    auto size = Size::make(getFrame().width(), getFrame().height());
+    auto& layout = getTextLayout(size, *getResources());
+    auto y = point.y - getTextVerticalOffset(size, layout, scale);
+    return layout.closestCaretUTF16(Point::make(point.x * scale, y * scale));
+}
+
 Size TextLayer::sizeThatFits(Size maxSize) {
     auto displayScale = getResources()->getDisplayScale();
     auto& layout = getTextLayout(maxSize, *getResources());

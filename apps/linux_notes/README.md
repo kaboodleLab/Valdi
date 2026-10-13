@@ -5,13 +5,13 @@ Set `SDL_VIDEO_DRIVER=wayland` to require Wayland. It uses software rasterisatio
 and an app HTTP server are absent. The existing headless Linux entry point is unchanged.
 
 The Notes app exercises TypeScript state, Unicode grapheme editing, selection by keyboard,
-undo/redo, clipboard, scrolling, resize and a private persistent document. The editor is an
+undo/redo, pointer placement and drag selection, clipboard, scrolling, resize and a private persistent document. The editor is an
 app-owned experimental component, not a completed port of native `textfield`/`textview`.
 
 ## Build and run the prototype
 
 Install the development headers and libraries for SDL3 and Fontconfig. On Arch, these are
-provided by `sdl3` and `fontconfig`. The Bazel extension declares the installed SDK
+provided by `sdl3`, `fontconfig` and `wayland` (including `wayland-scanner`). The Bazel extension declares the installed SDK
 headers explicitly. Use the repository's pinned Bazel version through Bazelisk.
 
 ```sh
@@ -40,14 +40,17 @@ installed `libncursesw.so.6` lets the compiler run. Record the package version a
 ## Verify the behavior
 
 `apps/linux_notes/smoke.sh` builds the native application and focused Linux tests,
-runs the portable editor tests, then opens the actual Wayland window twice with temporary
+runs the portable editor tests, runs shaped-caret/cache regressions, then opens the actual Wayland window twice with temporary
 private state. It exercises edit, save, deletion, undo and resize; the second launch checks
 that the TypeScript app loaded the saved document. Each launch writes a PNG from the same
 raster canvas sent to the window. Set `VALDI_LINUX_SMOKE_OUTPUT` to retain that evidence.
 
 Keyboard commands: Ctrl+A selects all; Shift+Left/Right extends selection; Ctrl+C/X/V uses
 the clipboard; Ctrl+S saves; Ctrl+Z/Shift+Ctrl+Z undoes/redoes. Home and End currently move to
-document boundaries. Selection uses attributed-text highlighting; the caret is a visible text marker in this first experiment.
+document boundaries. Selection uses attributed-text highlighting; the caret is a separate clipped, blinking rectangle from the exact shaped text layout. Moving a
+collapsed caret leaves the displayed string unchanged. Clicking places the caret; dragging and Shift-clicking extend selection from shaped positions.
+Ligature interior positions currently use
+a proportional advance fallback; visual bidi/up/down movement remains to implement.
 
 ## Local verification on 13 October 2026
 
@@ -57,6 +60,8 @@ running desktop. Bazel 8.2.1, SDL3 3.4.16 and Fontconfig 2.18.3 were used.
 
 - Portable model checks passed for emoji clusters, combining marks, selection, deletion and undo/redo.
 - Four existing Linux runtime tests and two private-document regressions passed.
+- Six shaped-caret regressions and eight shaping/cache regressions passed, including wrapped
+  discarded spaces, empty lines, emoji offsets and mouse hit testing.
 - Both Wayland smoke launches passed, with PNGs for the edited and reopened app.
 - A compositor screenshot confirmed the window in space 1. Real virtual-keyboard input and
   Ctrl+S reached the app and its private persistent file. Real keyboard copy/paste round-tripped
@@ -85,14 +90,16 @@ Linux desktop support claim.
   SQLite, migrations, encryption and multiplayer are separate follow-ups.
 - Clipboard calls currently use SDL. A SPAOS adapter must route host actions through the shared
   capability contracts; this compatibility behavior is not the platform's authority design.
-- Composition events reach the app, but caret tracking for IME candidates, pointer selection,
+- Composition events reach the app, but full IME candidate behavior,
   visual up/down navigation, full focus navigation and native editor parity remain to implement.
 - Rendering currently runs on the event thread, with timed animation refreshes. Idle work wakes
   through SDL when Valdi enqueues a task. GPU surfaces, explicit fences and compositor pacing are
   subsequent milestones.
-- The app publishes a state snapshot for the smoke probe. This is not a rich semantic tree or a
-  versioned SPAOS presentation protocol. Native components, independent panels and spatial
-  objects still need the shared contract and text/component adapters.
+- The app publishes a bounded semantic tree through the experimental
+  `zspaos_content_manager_v1` interface when advertised by the native compositor. Painted pixels
+  remain on the existing Wayland surface. The old desktop still works without this interface.
+  Acceptance acknowledges semantic state, not pixel presentation or document persistence.
+  Native component drawing, independent panels, assets and spatial objects remain to implement.
 - System fonts are discovered through Fontconfig. A host-selected `--fallback-font FILE` can
   supply a bundled font without installing it system-wide; the smoke command accepts
   `VALDI_LINUX_FALLBACK_FONT`. Deterministic font selection and shared SPAOS
@@ -101,3 +108,18 @@ Linux desktop support claim.
 Filament is not part of this first prototype. Before adding a 3D renderer, define the versioned
 surface, semantic and spatial-object contract with the compositor, then replace this raster
 presentation adapter with the agreed buffer and synchronization path.
+
+## Rich-content adapter
+
+`valdi_core/src/Presentation.ts` defines renderer-local descriptors. The host freezes their data
+on the JS callback thread, resolves the laid-out layers, clips rectangles, adds UTF-16 selection
+and caret geometry, and sends a complete snapshot on the existing Wayland connection. It owns
+only its generated proxies and event queue; SDL owns the display and surface. Updates coalesce
+while a reply is pending. No blocking roundtrip, additional listener or executable callback is
+introduced. A selected `--content-snapshot FILE` exports the same packet for a local probe.
+
+The canonical experimental XML and receiver live in SPAOS's native compositor. The vendored
+`valdi/linux/Desktop/spaos-content-unstable-v1.xml` must match
+`desktop/spatial/crates/protocol/protocols/spaos-content-unstable-v1.xml` there. The full contract
+is in SPAOS's `docs/spatial-os/architecture/painted-content.md`. This experiment is deliberately
+not named as the stable `spaos_spatial_v1` interface.
