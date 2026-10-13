@@ -8,6 +8,17 @@ The Notes app exercises TypeScript state, Unicode grapheme editing, selection by
 undo/redo, pointer placement and drag selection, clipboard, scrolling, resize and a private persistent document. The editor is an
 app-owned experimental component, not a completed port of native `textfield`/`textview`.
 
+## Upstream alignment
+
+The Linux host commits are rebased onto upstream
+`f26bee4dc170b6c929f71d4dd07d44e033f47176`, which contains the
+[ClientSQL landing](https://github.com/Snapchat/Valdi/commit/92002e4c44d7c80930eed6eea51a11e92f4e385b).
+ClientSQL's generator, runtime and SQLite sources are unchanged from upstream.
+Consumers can depend on the canonical `client_sql` module without applying the
+old PR181 overlay. Notes still uses its private document store; this rebase does
+not switch its persistence to SQL. The validation recorded below describes the
+original Linux revision, rather than a new Linux acceptance run after this rebase.
+
 ## Build and run the prototype
 
 Install the development headers and libraries for SDL3 and Fontconfig. On Arch, these are
