@@ -13,4 +13,5 @@ exports_files([
     "web_index.js.tpl",
     "web_path_browserify_shim.js.tpl",
     "web_webpack.config.js.tpl",
+    "linux_desktop_main.cpp.tpl",
 ])

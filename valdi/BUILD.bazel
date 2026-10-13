@@ -1179,6 +1179,7 @@ valdi_test(
     srcs = glob(["test/linux/**/*.cpp"]),
     deps = [
         ":valdi_standalone_runtime",
+        ":valdi_linux",
         "//valdi_core",
     ],
 )
@@ -1407,7 +1408,7 @@ cc_library(
     srcs = glob([
         "src/valdi/linux/**/*.c",
         "src/valdi/linux/**/*.cpp",
-    ]),
+    ], exclude = ["src/valdi/linux/Desktop/**/*.cpp"]),
     hdrs = glob([
         "src/valdi/linux/**/*.h",
         "src/valdi/linux/**/*.hpp",
@@ -1566,4 +1567,22 @@ filegroup(
     ],
     testonly = True,
     visibility = ["//compiler/clientsql:__pkg__"],
+)
+
+# Linux desktop prototype. Host dependencies are explicit system packages (SDL3 and Fontconfig).
+cc_library(
+    name = "valdi_linux_desktop",
+    srcs = glob(["src/valdi/linux/Desktop/**/*.cpp"]),
+    hdrs = glob(["src/valdi/linux/Desktop/**/*.hpp"]),
+    includes = ["src"],
+    copts = COMMON_COMPILE_FLAGS,
+    target_compatible_with = ["@platforms//os:linux"],
+    visibility = ["//visibility:public"],
+    deps = [
+        ":valdi_linux",
+        ":valdi_snap_drawing",
+        "//snap_drawing",
+        "//valdi_core:valdi_core_cc",
+        "@valdi_linux_desktop_syslibs//:syslibs",
+    ],
 )
