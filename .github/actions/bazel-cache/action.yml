@@ -4,19 +4,19 @@ description: 'Set up GCS remote cache and optional disk cache for Bazel builds'
 inputs:
   gcp_project_id:
     description: 'GCP project ID'
-    required: true
+    required: false
   workload_identity_provider:
     description: 'Full workload identity provider resource name'
-    required: true
+    required: false
   service_account:
     description: 'GCP service account email with read/write cache access. Only used for push/schedule on main.'
-    required: true
+    required: false
   service_account_ro:
     description: 'GCP service account email with read-only cache access. Used for every other run.'
-    required: true
+    required: false
   cache_bucket:
     description: 'GCS bucket name for remote cache'
-    required: true
+    required: false
   cache_key:
     description: 'Cache key prefix for disk cache via actions/cache. Omit to skip disk cache.'
     required: false
@@ -32,6 +32,10 @@ runs:
       id: sa
       shell: bash
       env:
+        REPOSITORY: ${{ github.repository }}
+        GCP_PROJECT: ${{ inputs.gcp_project_id }}
+        IDENTITY_PROVIDER: ${{ inputs.workload_identity_provider }}
+        CACHE_BUCKET: ${{ inputs.cache_bucket }}
         EVENT_NAME: ${{ github.event_name }}
         REF: ${{ github.ref }}
         SA_RW: ${{ inputs.service_account }}
@@ -42,17 +46,29 @@ runs:
         else
           SA="$SA_RO"; WRITER=false; KIND="read-only"
         fi
-        # Composite actions don't enforce `required`, and an empty SA makes the
-        # auth step fail under continue-on-error, so the build would silently go cold.
+        # A fork without upstream's GCP configuration can still run every test.
+        # Never request an upstream identity in that case. Keep incomplete or
+        # missing upstream configuration fatal so cache outages stay visible.
+        if [ "$REPOSITORY" != "Snapchat/Valdi" ] && [ -z "$GCP_PROJECT$IDENTITY_PROVIDER$CACHE_BUCKET$SA_RW$SA_RO" ]; then
+          echo "enabled=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::No remote cache configured for this fork; building without remote cache."
+          exit 0
+        fi
+        if [ -z "$GCP_PROJECT" ] || [ -z "$IDENTITY_PROVIDER" ] || [ -z "$CACHE_BUCKET" ]; then
+          echo "::error::Incomplete GCP remote cache configuration."
+          exit 1
+        fi
         if [ -z "$SA" ]; then
           echo "::error::No $KIND cache service account configured (check GCP_SERVICE_ACCOUNT / GCP_SERVICE_ACCOUNT_RO repo variables)."
           exit 1
         fi
+        echo "enabled=true" >> "$GITHUB_OUTPUT"
         echo "email=$SA" >> "$GITHUB_OUTPUT"
         echo "writer=$WRITER" >> "$GITHUB_OUTPUT"
         echo "Using $KIND cache identity: $SA"
 
     - name: Authenticate to Google Cloud
+      if: steps.sa.outputs.enabled == 'true'
       id: auth
       continue-on-error: true
       uses: google-github-actions/auth@v2
