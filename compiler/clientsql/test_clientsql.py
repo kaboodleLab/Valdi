@@ -144,7 +144,10 @@ class ClientSQLGeneratorTest(unittest.TestCase):
 
         integration_target = valdi_build[valdi_build.index('name = "test_integration"'):]
         focused_target = valdi_build[valdi_build.index('name = "test_client_sql_runtime_integration"'):]
-        aggregate_target = valdi_build[valdi_build.index('name = "test",\n    linkstatic = 1'):]
+        aggregate_match = re.search(r'^cc_test\(\s+name = "test",\n.*?^\)', valdi_build, re.M | re.S)
+        self.assertIsNotNone(aggregate_match, 'Missing aggregate Valdi test target')
+        assert aggregate_match is not None
+        aggregate_target = aggregate_match.group(0)
         self.assertIn("client_sql_smoke:client_sql_smoke_native_desktop", integration_target)
         self.assertNotIn('exclude = ["test/integration/ClientSQLRuntime_tests.cpp"]', integration_target)
         self.assertIn('"test/integration/ClientSQLRuntime_tests.cpp"', focused_target)
