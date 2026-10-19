@@ -501,6 +501,11 @@ void TextLayoutBuilder::processUnidirectionalRun(const TextLayoutSpecs& specs,
     }
 
     auto shapeResult = shape(specs, characters, charactersLength, script, isRTL);
+    auto characterOffset = static_cast<size_t>(characters - _characters.data());
+    for (auto i = static_cast<size_t>(shapeResult.glyphsStart - _glyphs.data());
+         i < static_cast<size_t>(shapeResult.glyphsEnd - _glyphs.data()); ++i) {
+        _glyphs[i].cluster += characterOffset; _glyphs[i].clusterEnd += characterOffset;
+    }
     if (specs.replacementSize) {
         auto glyphStartIndex = shapeResult.glyphsStart - _glyphs.data();
         auto glyphEndIndex = shapeResult.glyphsEnd - _glyphs.data();
@@ -562,6 +567,14 @@ void TextLayoutBuilder::processUnidirectionalRun(const TextLayoutSpecs& specs,
         }
 
         if (result.reachedEndLine) {
+            // Wrapping omits breaking whitespace from the painted glyph stream. Retain its
+            // source offsets at the preceding line edge so arrow navigation never loses a caret.
+            if (!result.brokenByNewLineCharacter && !shouldProcessEllipsis) {
+                for (auto skipped = result.end; skipped < result.next; ++skipped) {
+                    _caretBreaks.push_back({skipped->cluster, _position, lineMetrics.height()});
+                    _caretBreaks.push_back({skipped->clusterEnd, _position, lineMetrics.height()});
+                }
+            }
             if (shouldProcessEllipsis) {
                 processEllipsis(specs.withFont(originalFont));
                 return;
@@ -580,6 +593,7 @@ void TextLayoutBuilder::processUnidirectionalRun(const TextLayoutSpecs& specs,
                     return;
                 } else {
                     _currentLineMetrics = lineMetrics;
+                    _caretBreaks.push_back({result.end->clusterEnd, _position, lineMetrics.height()});
                 }
             }
         }
@@ -1368,6 +1382,9 @@ Ref<TextLayout> TextLayoutBuilder::build() {
 
     std::vector<TextLayoutVisualEntry> visualEntries;
     std::vector<TextLayoutAttachment> attachments;
+    std::vector<size_t> utf16(_characters.size() + 1, 0);
+    for (size_t i = 0; i < _characters.size(); ++i) { utf16[i + 1] = utf16[i] + (_characters[i] > 0xffff ? 2 : 1); }
+    std::vector<TextCaretSpan> caretSpans;
 
     /**
      Step 1: Calculate the offsets to apply on every  line which will respect the given TextAlign parameter
@@ -1424,6 +1441,25 @@ Ref<TextLayout> TextLayoutBuilder::build() {
                 outputSegmentToEntry(layoutEntry, glyphsIt, glyphsEnd, resolvedBounds, segment.font);
             }
 
+            if (!segment.isReplacement) {
+                Scalar x = resolvedSegmentX;
+                if (const auto* style = getBackgroundStyle(segment.backgroundStyleIndex)) { x += style->padding.left; }
+                for (size_t n = 0; n < segment.glyphsCount; ++n) {
+                    auto i = segment.isRightToLeft ? segment.glyphsCount - 1 - n : n;
+                    const auto& glyph = _glyphs[segment.glyphsStart + i];
+                    if (glyph.clusterEnd <= _characters.size() && glyph.cluster < glyph.clusterEnd) {
+                        auto a = Rect::makeXYWH(x, segment.drawPosition.y, 1, lineOffset.lineMetrics.height());
+                        auto b = Rect::makeXYWH(x + glyph.advanceX, segment.drawPosition.y, 1, lineOffset.lineMetrics.height());
+                        if (segment.isRightToLeft) { std::swap(a, b); }
+                        if (!caretSpans.empty() && caretSpans.back().start == utf16[glyph.cluster] &&
+                            caretSpans.back().end == utf16[glyph.clusterEnd] && caretSpans.back().leading.y() == a.y()) {
+                            if (segment.isRightToLeft) { caretSpans.back().leading = a; }
+                            else { caretSpans.back().trailing = b; }
+                        } else { caretSpans.push_back({utf16[glyph.cluster], utf16[glyph.clusterEnd], a, b}); }
+                    }
+                    x += glyph.advanceX;
+                }
+            }
             if (_includeTextBlob && !segment.isReplacement) {
                 ptrdiff_t itIncrement;
 
@@ -1471,8 +1507,19 @@ Ref<TextLayout> TextLayoutBuilder::build() {
         layoutEntry.bounds = entryBounds;
     }
 
+    for (const auto& br : _caretBreaks) {
+        if (br.character < utf16.size()) {
+            auto rect = Rect::makeXYWH(br.position.x, br.position.y, 1, br.height);
+            caretSpans.push_back({utf16[br.character], utf16[br.character], rect, rect});
+        }
+    }
+    if (!_entries.empty()) {
+        auto height = _entries.front().specs.font->metrics().descent - _entries.front().specs.font->metrics().ascent;
+        auto rect = Rect::makeXYWH(0, 0, 1, height);
+        caretSpans.push_back({0, 0, rect, rect});
+    }
     return Valdi::makeShared<TextLayout>(
-        _maxSize, std::move(entries), std::move(visualEntries), std::move(attachments), !_reachedMaxLines);
+        _maxSize, std::move(entries), std::move(visualEntries), std::move(attachments), !_reachedMaxLines, std::move(caretSpans));
 }
 
 } // namespace snap::drawing

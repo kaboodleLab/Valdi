@@ -1,0 +1,22 @@
+load("//bzl/valdi:valdi_linux_application.bzl", "valdi_linux_desktop_application")
+load("//bzl/valdi:valdi_module.bzl", "valdi_module")
+
+valdi_module(
+    name = "linux_notes",
+    srcs = glob(["src/**/*.ts", "src/**/*.tsx"]) + ["tsconfig.json"],
+    ios_module_name = "LinuxNotes",
+    disable_annotation_processing = True,
+    deps = [
+        "//src/valdi_modules/src/valdi/valdi_core",
+        "//src/valdi_modules/src/valdi/valdi_tsx",
+        "//src/valdi_modules/src/valdi/coreutils",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+valdi_linux_desktop_application(
+    name = "notes",
+    title = "Valdi Notes — Linux prototype",
+    root_component_path = "NotesApp@linux_notes/src/NotesApp",
+    deps = [":linux_notes_native"],
+)

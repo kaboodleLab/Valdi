@@ -204,13 +204,18 @@ struct TextLayoutAttachment {
         : bounds(bounds), attachment(attachment), replacementSize(replacementSize) {}
 };
 
+struct TextCaretSpan {
+    size_t start, end; // UTF-16 offsets, independent of glyph count.
+    Rect leading, trailing;
+};
+
 class TextLayout : public Valdi::SimpleRefCountable {
 public:
     TextLayout(Size maxSize,
                std::vector<TextLayoutEntry>&& entries,
                std::vector<TextLayoutVisualEntry>&& visualEntries,
                std::vector<TextLayoutAttachment>&& attachments,
-               bool fitsInMaxSize);
+               bool fitsInMaxSize, std::vector<TextCaretSpan>&& caretSpans = {});
     ~TextLayout() override;
 
     const std::vector<TextLayoutEntry>& getEntries() const;
@@ -222,6 +227,9 @@ public:
     const Rect& getBounds() const;
 
     bool fitsInMaxSize() const;
+
+    std::optional<Rect> caretAtUTF16(size_t offset) const;
+    size_t closestCaretUTF16(Point point) const;
 
     Valdi::Value toJSONValue() const;
 
@@ -235,6 +243,7 @@ private:
     std::vector<TextLayoutVisualEntry> _visualEntries;
     std::vector<TextLayoutAttachment> _attachments;
     Rect _bounds = Rect::makeEmpty();
+    std::vector<TextCaretSpan> _caretSpans;
 };
 
 } // namespace snap::drawing

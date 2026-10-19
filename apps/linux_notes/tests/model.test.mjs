@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import { NoteModel } from '../src/NoteModel.ts';
+const segmenter = new Intl.Segmenter(undefined, {granularity: 'grapheme'});
+const boundaries = text => [...new Set([0, ...Array.from(segmenter.segment(text), s => s.index), text.length])];
+const model = new NoteModel('a👨‍👩‍👧‍👦e\u0301日本語', boundaries);
+model.home(false); model.move(1, false); model.move(1, false);
+assert.equal(model.cursor, 'a👨‍👩‍👧‍👦'.length);
+model.erase(-1); assert.equal(model.text, 'ae\u0301日本語');
+model.undo(); assert.equal(model.text, 'a👨‍👩‍👧‍👦e\u0301日本語');
+assert.equal(model.cursor, 'a👨‍👩‍👧‍👦'.length); assert.equal(model.anchor, model.cursor);
+model.redo(); assert.equal(model.text, 'ae\u0301日本語');
+model.move(1, false); model.erase(-1); assert.equal(model.text, 'a日本語');
+model.selectAll(); model.insert('مرحبا'); assert.equal(model.text, 'مرحبا');
+model.home(false); model.erase(-1); assert.equal(model.text, 'مرحبا');
+model.endOfDocument(false); model.erase(1); assert.equal(model.text, 'مرحبا');
+model.home(false); model.move(1, true); model.insert('x'); assert.equal(model.text, 'xرحبا');
+console.log('Portable note model: Unicode editing, selection and undo passed');
+
+const pointer = new NoteModel('a👨‍👩‍👧‍👦b', boundaries);
+pointer.place(3, false); assert.equal(pointer.cursor, 1); assert.equal(pointer.anchor, 1);
+pointer.place(pointer.text.length, true); assert.equal(pointer.selectedText, '👨‍👩‍👧‍👦b');
+pointer.place(-10, false); assert.equal(pointer.cursor, 0);
+
+console.log('Note model Unicode, selection, pointer and undo checks passed.');

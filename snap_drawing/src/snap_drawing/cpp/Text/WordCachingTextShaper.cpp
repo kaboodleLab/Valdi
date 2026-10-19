@@ -107,9 +107,10 @@ size_t WordCachingTextShaper::breakdownByWordAndShape(const Character* unicodeTe
                           isRightToLeft,
                           letterSpacing,
                           script,
-                          out);
+                          out, iterator.rangeStart());
             }
 
+            auto spaceIndex = iterator.position();
             iterator.advance();
             iterator.resetRange();
 
@@ -117,7 +118,9 @@ size_t WordCachingTextShaper::breakdownByWordAndShape(const Character* unicodeTe
                 spaceGlyph = {getSpaceGlyphForFont(fontId, font)};
             }
 
-            out.emplace_back(spaceGlyph.value());
+            auto glyph = spaceGlyph.value();
+            glyph.cluster = spaceIndex; glyph.clusterEnd = spaceIndex + 1;
+            out.emplace_back(glyph);
         } else {
             iterator.advance();
         }
@@ -131,7 +134,7 @@ size_t WordCachingTextShaper::breakdownByWordAndShape(const Character* unicodeTe
                   isRightToLeft,
                   letterSpacing,
                   script,
-                  out);
+                  out, iterator.rangeStart());
     }
 
     auto outputSize = out.size();
@@ -150,12 +153,12 @@ void WordCachingTextShaper::shapeWord(const Character* unicodeText,
                                       bool isRightToLeft,
                                       Scalar letterSpacing,
                                       TextScript script,
-                                      std::vector<ShapedGlyph>& out) {
+                                      std::vector<ShapedGlyph>& out, size_t characterOffset) {
     auto cacheKey = TextShaperCacheKey(fontId, letterSpacing, script, isRightToLeft, unicodeText, length);
     auto cacheResult = _cache.find(cacheKey);
 
     if (cacheResult) {
-        copyGlyphs(cacheResult.value().glyphs, cacheResult.value().length, out);
+        copyGlyphs(cacheResult.value().glyphs, cacheResult.value().length, out, characterOffset);
         return;
     }
 
@@ -169,7 +172,7 @@ void WordCachingTextShaper::shapeWord(const Character* unicodeText,
     }
 
     _cache.insert(cacheKey, writtenGlyphs, writtenGlyphsLength);
-    copyGlyphs(writtenGlyphs, writtenGlyphsLength, out);
+    copyGlyphs(writtenGlyphs, writtenGlyphsLength, out, characterOffset);
     _tmp.clear();
 }
 
@@ -185,13 +188,14 @@ Ref<Font> WordCachingTextShaper::getUniformFont(const Ref<Typeface>& typeface) {
     return font;
 }
 
-void WordCachingTextShaper::copyGlyphs(const ShapedGlyph* glyphs, size_t length, std::vector<ShapedGlyph>& out) {
+void WordCachingTextShaper::copyGlyphs(const ShapedGlyph* glyphs, size_t length, std::vector<ShapedGlyph>& out, size_t characterOffset) {
     auto beforeSize = out.size();
     out.resize(beforeSize + length);
 
     auto* outGlyphs = &out[beforeSize];
     for (size_t i = 0; i < length; i++) {
         outGlyphs[i] = glyphs[i];
+        outGlyphs[i].cluster += characterOffset; outGlyphs[i].clusterEnd += characterOffset;
     }
 }
 
@@ -214,6 +218,7 @@ ShapedGlyph WordCachingTextShaper::getSpaceGlyphForFont(FontId fontId, Font& fon
     glyph.offsetY = 0;
     glyph.advanceX = width;
     glyph.setCharacter(text, false);
+    glyph.clusterEnd = 1;
 
     _cache.insert(cacheKey, &glyph, 1);
 

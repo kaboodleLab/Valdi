@@ -23,6 +23,9 @@ struct ShapedGlyph {
     Scalar offsetY;
     Scalar advanceX;
     SkGlyphID glyphID;
+    // UTF-32 source cluster, local to the shaped run. Cache entries keep local offsets.
+    size_t cluster = 0;
+    size_t clusterEnd = 0;
 
 public:
     constexpr Character character() const {
@@ -39,7 +42,8 @@ public:
 
     constexpr bool operator==(const ShapedGlyph& other) const {
         return offsetX == other.offsetX && offsetY == other.offsetY && advanceX == other.advanceX &&
-               glyphID == other.glyphID && characterAndFlags == other.characterAndFlags;
+               glyphID == other.glyphID && characterAndFlags == other.characterAndFlags &&
+               cluster == other.cluster && clusterEnd == other.clusterEnd;
     }
 
     constexpr bool operator!=(const ShapedGlyph& other) const {

@@ -1,0 +1,16 @@
+load("//bzl/valdi:valdi_module.bzl", "valdi_module")
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+valdi_module(
+    name = "linux_spatial_kit",
+    srcs = glob(["src/**/*.ts"]) + ["tsconfig.json"],
+    ios_module_name = "LinuxSpatialKit",
+    disable_annotation_processing = True,
+    deps = ["//src/valdi_modules/src/valdi/valdi_core"],
+    visibility = ["//visibility:public"],
+)
+cc_binary(
+    name = "host",
+    srcs = ["SpatialKitMain.cpp"],
+    deps = ["//valdi:valdi_linux", ":linux_spatial_kit_native"],
+    target_compatible_with = ["@platforms//os:linux"],
+)

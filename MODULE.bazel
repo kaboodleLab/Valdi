@@ -809,3 +809,7 @@ use_repo(
     "yams",
     "zip_lib",
 )
+
+# Only fetched when the Linux desktop host is built; the headless/mobile targets do not need SDL.
+linux_desktop_deps = use_extension("//bzl:linux_desktop_deps.bzl", "linux_desktop_deps")
+use_repo(linux_desktop_deps, "valdi_linux_desktop_syslibs")
