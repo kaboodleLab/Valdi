@@ -333,12 +333,19 @@ size_t TextShaperHarfbuzz::shape(const Character* unicodeText,
     out.resize(glyphsStart + glyphsLength);
     auto* glyphs = out.data() + glyphsStart;
 
+    std::vector<uint32_t> clusters;
+    for (size_t i = 0; i < glyphsLength; ++i) { clusters.push_back(glyphInfos[i].cluster); }
+    std::sort(clusters.begin(), clusters.end());
+    clusters.erase(std::unique(clusters.begin(), clusters.end()), clusters.end());
     for (size_t i = 0; i < glyphsLength; i++) {
         auto& glyph = glyphs[i];
         auto& info = glyphInfos[i];
         auto& pos = glyphPositions[i];
 
         glyph.setCharacter(unicodeText[info.cluster], (info.mask & HB_GLYPH_FLAG_UNSAFE_TO_BREAK) != 0);
+        glyph.cluster = info.cluster;
+        auto next = std::upper_bound(clusters.begin(), clusters.end(), info.cluster);
+        glyph.clusterEnd = next == clusters.end() ? length : *next;
         glyph.glyphID = info.codepoint;
         glyph.offsetX = pos.x_offset * textSizeX;
         glyph.offsetY = -(pos.y_offset * textSizeY); // HarfBuzz y-up, Skia y-down
